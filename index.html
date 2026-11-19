@@ -76,16 +76,17 @@
     <div id="resultBox"></div>
 
     <h2>3. Control y Limpieza de Base de Datos (Supabase)</h2>
-    <p class="subtitle">Revisa los informes guardados o elimina un registro específico por su ID si necesitas limpiar pruebas o errores.</p>
+    <p class="subtitle">Revisa los informes guardados, prueba inserción directa en BD o elimina un registro específico por su ID.</p>
     <div class="db-box">
         <div class="btn-group" style="justify-content: flex-start; margin-bottom: 12px;">
             <button id="btnLoadDb" class="btn-dark" onclick="loadSavedReports()">📋 Ver Reportes Guardados</button>
+            <button id="btnTestDb" class="btn-green" onclick="testSupabaseInsert()">🧪 Probar Inserción en BD</button>
         </div>
         <div class="db-row">
             <input type="text" id="deleteReportId" class="text-input" placeholder="Pega aquí el ID del reporte a eliminar">
             <button id="btnDeleteOne" class="btn-outline-red" onclick="deleteReportById()">🗑️ Borrar Reporte por ID</button>
         </div>
-        <div id="dbList">Toca "Ver Reportes Guardados" para consultar los registros actuales.</div>
+        <div id="dbList">Toca "Ver Reportes Guardados" o "Probar Inserción en BD" para verificar Supabase.</div>
     </div>
 </div>
 
@@ -239,6 +240,71 @@
         return data.candidates[0].content.parts[0].text;
     }
 
+    async function saveReportToSupabase(parsedData) {
+        const { data: reportData, error: reportError } = await supabaseClient
+            .from('audit_reports')
+            .insert([{
+                station_name: parsedData.station_name,
+                audit_date: parsedData.audit_date,
+                coach_name: parsedData.coach_name,
+                overall_score: parsedData.overall_score,
+                pista_score: parsedData.pista_score,
+                tienda_score: parsedData.tienda_score,
+                raw_summary: JSON.stringify(parsedData.key_findings)
+            }])
+            .select()
+            .single();
+
+        if (reportError) throw new Error(`Supabase audit_reports: ${reportError.message}`);
+
+        if (parsedData.evaluated_staff && parsedData.evaluated_staff.length > 0) {
+            const staffRows = parsedData.evaluated_staff.map(s => ({
+                report_id: reportData.id,
+                staff_name: s.name,
+                area: s.role,
+                score: s.score,
+                comments: s.notes
+            }));
+            const { error: staffErr } = await supabaseClient.from('audit_evaluated_staff').insert(staffRows);
+            if (staffErr) throw new Error(`Supabase staff: ${staffErr.message}`);
+        }
+
+        if (parsedData.rubric_scores && parsedData.rubric_scores.length > 0) {
+            const rubricRows = parsedData.rubric_scores.map(r => ({
+                report_id: reportData.id,
+                category: r.category,
+                rubric_name: r.item,
+                score: r.score
+            }));
+            const { error: rubricErr } = await supabaseClient.from('audit_rubric_scores').insert(rubricRows);
+            if (rubricErr) throw new Error(`Supabase rubric: ${rubricErr.message}`);
+        }
+
+        return reportData;
+    }
+
+    async function testSupabaseInsert() {
+        showErrorDetails('');
+        setStatus('Probando inserción directa en Supabase...', '#00539F');
+        try {
+            const sample = {
+                station_name: 'Prueba Conexión BD',
+                audit_date: new Date().toISOString().slice(0, 10),
+                coach_name: 'Verificación Sistema',
+                overall_score: 0,
+                pista_score: 0,
+                tienda_score: 0,
+                key_findings: ['Registro de prueba de conexión con Supabase']
+            };
+            const created = await saveReportToSupabase(sample);
+            setStatus(`Conexión OK: registro de prueba guardado con ID ${created.id}.`, 'green');
+            loadSavedReports();
+        } catch (err) {
+            setStatus(`Error en Supabase: ${err.message}`, 'red');
+            showErrorDetails(err.message);
+        }
+    }
+
     async function processBatch(saveToDb) {
         const files = document.getElementById('pdfFiles').files;
         if (files.length === 0) return setStatus('Selecciona al menos un archivo PDF.', 'red');
@@ -284,44 +350,7 @@ Devuelve un objeto JSON con esta estructura:
                 lastExtractedTextBatch.push(parsedData);
 
                 if (saveToDb) {
-                    const { data: reportData, error: reportError } = await supabaseClient
-                        .from('audit_reports')
-                        .insert([{
-                            station_name: parsedData.station_name,
-                            audit_date: parsedData.audit_date,
-                            coach_name: parsedData.coach_name,
-                            overall_score: parsedData.overall_score,
-                            pista_score: parsedData.pista_score,
-                            tienda_score: parsedData.tienda_score,
-                            raw_summary: JSON.stringify(parsedData.key_findings)
-                        }])
-                        .select()
-                        .single();
-
-                    if (reportError) throw new Error(`Supabase audit_reports: ${reportError.message}`);
-
-                    if (parsedData.evaluated_staff && parsedData.evaluated_staff.length > 0) {
-                        const staffRows = parsedData.evaluated_staff.map(s => ({
-                            report_id: reportData.id,
-                            staff_name: s.name,
-                            area: s.role,
-                            score: s.score,
-                            comments: s.notes
-                        }));
-                        const { error: staffErr } = await supabaseClient.from('audit_evaluated_staff').insert(staffRows);
-                        if (staffErr) throw new Error(`Supabase staff: ${staffErr.message}`);
-                    }
-
-                    if (parsedData.rubric_scores && parsedData.rubric_scores.length > 0) {
-                        const rubricRows = parsedData.rubric_scores.map(r => ({
-                            report_id: reportData.id,
-                            category: r.category,
-                            rubric_name: r.item,
-                            score: r.score
-                        }));
-                        const { error: rubricErr } = await supabaseClient.from('audit_rubric_scores').insert(rubricRows);
-                        if (rubricErr) throw new Error(`Supabase rubric: ${rubricErr.message}`);
-                    }
+                    await saveReportToSupabase(parsedData);
                 }
                 processedCount++;
             } catch (err) {

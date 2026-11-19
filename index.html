@@ -153,75 +153,62 @@
 
         for (const modelName of MODELS_TO_TRY) {
             const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
-            const maxRetries = 2;
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 90000);
 
-            for (let attempt = 1; attempt <= maxRetries; attempt++) {
-                const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 45000);
+            try {
+                if (modelName !== MODELS_TO_TRY[0]) {
+                    setStatus(`Probando modelo de respaldo (${modelName}) para ${file.name}...`, '#b45309');
+                }
 
-                try {
-                    if (attempt > 1 || modelName !== MODELS_TO_TRY[0]) {
-                        setStatus(`Probando (${modelName}, intento ${attempt}) archivo ${fileIndex + 1} de ${totalFiles}: ${file.name}...`, '#b45309');
-                    }
-
-                    const response = await fetch(url, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        signal: controller.signal,
-                        body: JSON.stringify({
-                            systemInstruction: { parts: [{ text: systemInstruction }] },
-                            contents: [{
-                                parts: [
-                                    { inlineData: { mimeType: 'application/pdf', data: base64Pdf } },
-                                    { text: `Extrae los datos de este PDF (${file.name}) siguiendo estrictamente el esquema JSON solicitado.` }
-                                ]
-                            }],
-                            generationConfig: {
-                                temperature: 0.0,
-                                responseMimeType: "application/json"
-                            }
-                        })
-                    });
-
-                    clearTimeout(timeoutId);
-                    const data = await response.json();
-
-                    if (data.error) {
-                        const errCode = data.error.code || '';
-                        const msg = `API Gemini (${errCode}): ${data.error.message}`;
-                        lastError = new Error(msg);
-
-                        if (errCode === 503 || errCode === 429) {
-                            await sleep(3000 * attempt);
-                            continue;
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    signal: controller.signal,
+                    body: JSON.stringify({
+                        systemInstruction: { parts: [{ text: systemInstruction }] },
+                        contents: [{
+                            parts: [
+                                { inlineData: { mimeType: 'application/pdf', data: base64Pdf } },
+                                { text: `Extrae los datos de este PDF (${file.name}) siguiendo estrictamente el esquema JSON solicitado.` }
+                            ]
+                        }],
+                        generationConfig: {
+                            temperature: 0.0,
+                            responseMimeType: "application/json"
                         }
-                        if (errCode === 404) {
-                            break;
-                        }
-                        throw lastError;
-                    }
+                    })
+                });
 
-                    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-                    if (!text) throw new Error('Gemini no devolvió contenido en la respuesta.');
-                    return JSON.parse(text);
+                clearTimeout(timeoutId);
+                const data = await response.json();
 
-                } catch (err) {
-                    clearTimeout(timeoutId);
-                    lastError = err.name === 'AbortError' ? new Error('Tiempo de espera agotado al procesar el PDF.') : err;
-                    const isRetryable = err.name === 'AbortError' || /Failed to fetch|NetworkError|503|429/i.test(err.message);
-                    if (isRetryable && attempt < maxRetries) {
-                        await sleep(3000 * attempt);
+                if (data.error) {
+                    const errCode = data.error.code || '';
+                    lastError = new Error(`API Gemini (${errCode}): ${data.error.message}`);
+                    if (errCode === 503 || errCode === 429 || errCode === 404) {
                         continue;
-                    }
-                    if (/503|429|Failed to fetch|AbortError/i.test(lastError.message)) {
-                        break;
                     }
                     throw lastError;
                 }
+
+                const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+                if (!text) throw new Error('Gemini no devolvió contenido en la respuesta.');
+                return JSON.parse(text);
+
+            } catch (err) {
+                clearTimeout(timeoutId);
+                lastError = err.name === 'AbortError'
+                    ? new Error('Tiempo de espera agotado al procesar el PDF (puede ser muy pesado o el servidor tardó más de 90s).')
+                    : err;
+                if (/503|429|404|Failed to fetch|AbortError/i.test(lastError.message)) {
+                    continue;
+                }
+                throw lastError;
             }
         }
 
-        throw lastError || new Error('No se pudo procesar el PDF tras reintentar.');
+        throw lastError || new Error('No se pudo procesar el PDF.');
     }
 
     async function callGeminiText(promptText, systemInstruction) {
@@ -351,7 +338,7 @@ Devuelve un objeto JSON con esta estructura:
             progressBar.style.width = `${percent}%`;
 
             if (i < files.length - 1) {
-                await sleep(1000);
+                await sleep(800);
             }
         }
 

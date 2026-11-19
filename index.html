@@ -6,6 +6,7 @@
     <title>Cargador Directo Mentoría Puma (Sin IA)</title>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <style>
         :root { --primary: #00539F; --secondary: #E31837; --bg: #f4f6f9; --card: #ffffff; }
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background-color: var(--bg); margin: 0; padding: 15px; color: #222; }
@@ -26,6 +27,7 @@
         .btn-blue { background: var(--primary); }
         .btn-green { background: #1e7e34; }
         .btn-dark { background: #343a40; }
+        .btn-pdf { background: #b71c1c; }
         .btn-outline-red { background: #fff; color: var(--secondary); border: 1.5px solid var(--secondary); }
         .btn-danger-solid { background: var(--secondary); color: #fff; }
         .progress-container { width: 100%; background: #e9ecef; border-radius: 6px; height: 10px; margin-top: 15px; display: none; overflow: hidden; }
@@ -81,6 +83,7 @@
                     <option value="ALL">Todos los meses</option>
                 </select>
                 <button class="btn-dark" onclick="refreshAllFromDb()">🔄 Actualizar Informe</button>
+                <button id="btnExportPdf" class="btn-pdf" onclick="exportGeneralReportPdf()">📄 Generar Reporte en PDF</button>
             </div>
         </div>
 
@@ -168,6 +171,16 @@
     ];
 
     let cachedDbReports = [];
+    let currentGeneralSummary = {
+        selectedMonth: 'ALL',
+        visitsCount: 0,
+        totalStaff: 0,
+        safetyRisksCount: 0,
+        coachEntries: [],
+        pistaRows: [],
+        tiendaRows: [],
+        safetyRisks: []
+    };
 
     window.onload = () => {
         refreshAllFromDb();
@@ -609,11 +622,13 @@
         return map;
     }
 
-    function renderRubricGroupHtml(title, statsMap) {
-        const rows = Object.values(statsMap)
+    function getSortedRubricRows(statsMap) {
+        return Object.values(statsMap)
             .filter(r => (r.c1 + r.c2 + r.c3 + r.c4) > 0)
             .sort((a, b) => b.lt4 - a.lt4 || (b.c1 + b.c2) - (a.c1 + a.c2));
+    }
 
+    function renderRubricGroupHtml(title, rows) {
         if (rows.length === 0) {
             return `<h4>${title}</h4><div style="color:#666;">Sin calificaciones de rúbrica registradas en este período.</div>`;
         }
@@ -698,13 +713,27 @@
             })
             .sort((a, b) => b.count - a.count);
 
+        const pistaRows = getSortedRubricRows(pistaStats);
+        const tiendaRows = getSortedRubricRows(tiendaStats);
+
+        currentGeneralSummary = {
+            selectedMonth,
+            visitsCount: filtered.length,
+            totalStaff,
+            safetyRisksCount: safetyRisks.length,
+            coachEntries,
+            pistaRows,
+            tiendaRows,
+            safetyRisks
+        };
+
         document.getElementById('visitsByCoachBox').innerHTML = coachEntries.length === 0
             ? 'No hay visitas registradas en el período seleccionado.'
             : coachEntries.map(item => `<div>• <strong>${item.label}:</strong> ${item.count} visita(s)</div>`).join('');
 
         document.getElementById('commonIssuesBox').innerHTML =
-            renderRubricGroupHtml('Agente de Pista (9 preguntas)', pistaStats) +
-            renderRubricGroupHtml('Agente de Tienda (9 preguntas)', tiendaStats);
+            renderRubricGroupHtml('Agente de Pista (9 preguntas)', pistaRows) +
+            renderRubricGroupHtml('Agente de Tienda (9 preguntas)', tiendaRows);
 
         document.getElementById('safetyRisksBox').innerHTML = safetyRisks.length === 0
             ? '<span class="clean-note">Ninguna estación reporta riesgos de seguridad en el período seleccionado.</span>'
@@ -714,6 +743,167 @@
                     <span>${sr.description}</span>
                 </div>`
             ).join('');
+    }
+
+    function exportGeneralReportPdf() {
+        if (!window.jspdf || !window.jspdf.jsPDF) {
+            return alert('No se pudo cargar la librería jsPDF para exportar el PDF.');
+        }
+
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF({ unit: 'pt', format: 'a4' });
+        const pageWidth = doc.internal.pageSize.getWidth();
+        const pageHeight = doc.internal.pageSize.getHeight();
+        const margin = 40;
+        const maxWidth = pageWidth - margin * 2;
+        let y = 45;
+
+        const ensureSpace = (needed = 24) => {
+            if (y + needed > pageHeight - 40) {
+                doc.addPage();
+                y = 45;
+            }
+        };
+
+        const addSectionTitle = (title) => {
+            ensureSpace(32);
+            y += 10;
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(12);
+            doc.setTextColor(0, 83, 159);
+            doc.text(title, margin, y);
+            y += 6;
+            doc.setDrawColor(220, 224, 228);
+            doc.line(margin, y, pageWidth - margin, y);
+            y += 14;
+            doc.setTextColor(34, 34, 34);
+        };
+
+        // Encabezado principal
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(16);
+        doc.setTextColor(0, 83, 159);
+        doc.text('Informe General - Mentoría Puma | Super 7', margin, y);
+        y += 18;
+
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(10);
+        doc.setTextColor(90, 90, 90);
+        const periodLabel = currentGeneralSummary.selectedMonth === 'ALL'
+            ? 'Todos los meses'
+            : `Mes: ${currentGeneralSummary.selectedMonth}`;
+        doc.text(`${periodLabel}  |  Generado: ${new Date().toISOString().slice(0, 10)}`, margin, y);
+        y += 18;
+
+        // KPIs
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(11);
+        doc.setTextColor(34, 34, 34);
+        doc.text(
+            `Visitas: ${currentGeneralSummary.visitsCount}   |   Colaboradores Evaluados/Capacitados: ${currentGeneralSummary.totalStaff}   |   Estaciones con Riesgo de Seguridad: ${currentGeneralSummary.safetyRisksCount}`,
+            margin,
+            y
+        );
+        y += 16;
+
+        // 1) Visitas por capacitador
+        addSectionTitle('1) Visitas en el mes por capacitador');
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(10.5);
+        if (currentGeneralSummary.coachEntries.length === 0) {
+            doc.text('No hay visitas registradas en el período seleccionado.', margin, y);
+            y += 16;
+        } else {
+            currentGeneralSummary.coachEntries.forEach(item => {
+                ensureSpace(18);
+                doc.text(`• ${item.label}: ${item.count} visita(s)`, margin + 6, y);
+                y += 15;
+            });
+        }
+
+        // 2) Fallas más comunes
+        addSectionTitle('2) Fallas más comunes (F = Fallas [1, 2, 3] | C = Cumplimiento [4])');
+        const renderPdfRubricList = (subTitle, rows) => {
+            ensureSpace(22);
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(11);
+            doc.setTextColor(0, 83, 159);
+            doc.text(subTitle, margin + 4, y);
+            y += 15;
+
+            if (rows.length === 0) {
+                doc.setFont('helvetica', 'normal');
+                doc.setFontSize(10);
+                doc.setTextColor(100, 100, 100);
+                doc.text('Sin calificaciones registradas.', margin + 10, y);
+                y += 15;
+                return;
+            }
+
+            rows.forEach(r => {
+                ensureSpace(30);
+                const totalScored = r.c1 + r.c2 + r.c3 + r.c4;
+                let x = margin + 8;
+
+                doc.setFont('helvetica', 'bold');
+                doc.setFontSize(10);
+                doc.setTextColor(198, 40, 40);
+                const fText = `F: ${r.lt4}`;
+                doc.text(fText, x, y);
+                x += doc.getTextWidth(fText) + 10;
+
+                doc.setTextColor(30, 126, 52);
+                const cText = `C: ${r.c4}`;
+                doc.text(cText, x, y);
+                x += doc.getTextWidth(cText) + 10;
+
+                doc.setTextColor(34, 34, 34);
+                const critLines = doc.splitTextToSize(r.criterion, pageWidth - x - margin);
+                doc.text(critLines, x, y);
+                y += critLines.length * 13;
+
+                doc.setFont('helvetica', 'normal');
+                doc.setFontSize(9);
+                doc.setTextColor(90, 90, 90);
+                doc.text(`1 = ${r.c1}  |  2 = ${r.c2}  |  3 = ${r.c3}  |  4 = ${r.c4}  (Total evaluadas: ${totalScored})`, margin + 14, y);
+                y += 15;
+            });
+        };
+
+        renderPdfRubricList('Agente de Pista', currentGeneralSummary.pistaRows);
+        renderPdfRubricList('Agente de Tienda', currentGeneralSummary.tiendaRows);
+
+        // 3) Riesgos de seguridad
+        addSectionTitle('3) Estaciones con riesgos de seguridad y descripción del riesgo');
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(10);
+        if (currentGeneralSummary.safetyRisks.length === 0) {
+            doc.setTextColor(30, 126, 52);
+            doc.text('Ninguna estación reporta riesgos de seguridad en el período seleccionado.', margin + 6, y);
+            y += 16;
+        } else {
+            currentGeneralSummary.safetyRisks.forEach(sr => {
+                const header = `• ${sr.station} (${sr.date} — Coach: ${sr.coach})`;
+                const descLines = doc.splitTextToSize(`Descripción: ${sr.description}`, maxWidth - 14);
+                ensureSpace(16 + descLines.length * 13 + 8);
+
+                doc.setFont('helvetica', 'bold');
+                doc.setTextColor(198, 40, 40);
+                doc.text(header, margin + 6, y);
+                y += 14;
+
+                doc.setFont('helvetica', 'normal');
+                doc.setTextColor(34, 34, 34);
+                doc.text(descLines, margin + 14, y);
+                y += descLines.length * 13 + 8;
+            });
+        }
+
+        const fileSuffix = currentGeneralSummary.selectedMonth === 'ALL'
+            ? 'Todos'
+            : currentGeneralSummary.selectedMonth;
+        doc.save(`Informe_General_Mentoria_Puma_${fileSuffix}.pdf`);
+        setStatus('Reporte PDF generado y descargado correctamente.', 'green');
     }
 
     async function deleteReportByStationName() {
@@ -792,6 +982,7 @@
         document.getElementById('btnUploadNoAi').disabled = state;
         document.getElementById('btnDeleteByName').disabled = state;
         document.getElementById('btnDeleteAll').disabled = state;
+        document.getElementById('btnExportPdf').disabled = state;
     }
 </script>
 

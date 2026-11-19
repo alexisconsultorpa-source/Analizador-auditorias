@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Cargador Directo Mentoría Puma (Sin IA)</title>
+    <title>Generador de Informes de capacitación</title>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -49,7 +49,11 @@
         .badge-c { display: inline-block; background: #eefaf0; color: #1e7e34; border: 1px solid #b7e4c0; font-weight: 700; padding: 2px 7px; border-radius: 6px; font-size: 12px; margin-right: 8px; }
         .rank-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 9px 10px; border-bottom: 1px solid #f0f0f0; flex-wrap: wrap; }
         .rank-pos { font-weight: 700; color: var(--primary); margin-right: 6px; }
-        .rank-score { font-weight: 700; color: #1e7e34; background: #eefaf0; border: 1px solid #b7e4c0; padding: 3px 9px; border-radius: 999px; font-size: 12px; }
+        .rank-score { font-weight: 700; padding: 3px 9px; border-radius: 999px; font-size: 12px; }
+        .rank-score-green { color: #1e7e34; background: #eefaf0; border: 1px solid #b7e4c0; }
+        .rank-score-yellow { color: #856404; background: #fff8e1; border: 1px solid #ffe082; }
+        .rank-score-red { color: #c62828; background: #fff5f5; border: 1px solid #f5c2c7; }
+        .rank-score-na { color: #555; background: #f1f3f5; border: 1px solid #dee2e6; }
         .rank-meta { font-size: 12px; color: #555; margin-top: 2px; }
         .issue-breakdown { color: #555; font-size: 12px; margin-top: 4px; }
         .risk-alert { background: #fff5f5; border-left: 4px solid var(--secondary); padding: 10px 12px; margin: 8px 0; border-radius: 4px; }
@@ -59,7 +63,7 @@
 <body>
 
 <div class="container">
-    <h1>Cargador Directo Mentoría Puma (Sin IA)</h1>
+    <h1>Generador de Informes de capacitación</h1>
     <p class="subtitle">Extrae datos estructurados de Mentoría Puma | Super 7 y arma el informe general desde Supabase sin usar IA.</p>
 
     <h2>1. Seleccionar PDFs y Subir a Base de Datos</h2>
@@ -128,7 +132,7 @@
         <div class="report-section">
             <h3>4) Ranking de estaciones (mayor a menor porcentaje alcanzado)</h3>
             <p class="subtitle" style="margin-bottom:8px; font-size:12px;">
-                Si una estación tiene más de una visita en el período, se promedia el porcentaje de sus visitas.
+                Si una estación tiene más de una visita en el período, se promedia el porcentaje de sus visitas. Colores: <strong style="color:#1e7e34;">90–100%</strong> verde, <strong style="color:#856404;">80–89%</strong> amarillo, <strong style="color:#c62828;">79% o menos</strong> rojo.
             </p>
             <div id="stationRankingBox">Sin datos cargados.</div>
         </div>
@@ -220,6 +224,21 @@
         const box = document.getElementById('previewBox');
         box.style.display = 'block';
         box.textContent = text;
+    }
+
+    function getScoreTier(score) {
+        if (typeof score !== 'number' || Number.isNaN(score)) return 'na';
+        if (score >= 90) return 'green';
+        if (score >= 80) return 'yellow';
+        return 'red';
+    }
+
+    function getScoreRgb(score) {
+        const tier = getScoreTier(score);
+        if (tier === 'green') return [30, 126, 52];
+        if (tier === 'yellow') return [133, 100, 4];
+        if (tier === 'red') return [198, 40, 40];
+        return [90, 90, 90];
     }
 
     function normalizeText(str) {
@@ -434,7 +453,7 @@
                 results.push(
                     `Archivo: ${parsed.source_file}\n` +
                     `Estación: ${parsed.station_name} | Fecha: ${parsed.audit_date}\n` +
-                    `Coach: ${parsed.coach_name || 'N/A'} | Supervisor: ${parsed.supervisor_name || 'N/A'}\n` +
+                    `Capacitador: ${parsed.coach_name || 'N/A'} | Supervisor: ${parsed.supervisor_name || 'N/A'}\n` +
                     `Nivel Global: ${parsed.global_level || 'N/A'} (${parsed.overall_score ?? 'N/A'}%)\n` +
                     `Colaboradores (${parsed.staff_count}): ${parsed.staff.map(s => `${s.name} [${s.role}: ${s.points} / ${s.adjusted_pct}]`).join(', ') || 'Ninguno'}\n` +
                     `Rúbrica:\n  ${rubricSummary || 'Ninguna'}\n` +
@@ -565,7 +584,7 @@
             const colCount = Array.isArray(r.parsed.staff) ? r.parsed.staff.length : (r.parsed.staff_count || 0);
             const coachClean = formatDisplayName(r.coach_name || 'Sin asignar');
             return `<div style="padding:6px 0; border-bottom:1px solid #f0f0f0;">
-                <strong>Estación:</strong> ${r.station_name || 'N/A'} | <strong>Fecha:</strong> ${r.audit_date || 'N/A'} | <strong>Coach:</strong> ${coachClean} | <strong>Col.:</strong> ${colCount} | <strong>Puntaje:</strong> ${r.overall_score ?? 'N/A'}%
+                <strong>Estación:</strong> ${r.station_name || 'N/A'} | <strong>Fecha:</strong> ${r.audit_date || 'N/A'} | <strong>Capacitador:</strong> ${coachClean} | <strong>Col.:</strong> ${colCount} | <strong>Puntaje:</strong> ${r.overall_score ?? 'N/A'}%
             </div>`;
         }).join('');
     }
@@ -695,6 +714,7 @@
                     station: entry.station,
                     visitCount: entry.visits.length,
                     avgScore,
+                    tier: getScoreTier(avgScore),
                     visits: entry.visits
                 };
             })
@@ -801,7 +821,7 @@
             ? '<span class="clean-note">Ninguna estación reporta riesgos de seguridad en el período seleccionado.</span>'
             : safetyRisks.map(sr =>
                 `<div class="risk-alert">
-                    <strong>${sr.station}</strong> (${sr.date} — Coach: ${sr.coach})<br>
+                    <strong>${sr.station}</strong> (${sr.date} — Capacitador: ${sr.coach})<br>
                     <span>${sr.description}</span>
                 </div>`
             ).join('');
@@ -823,7 +843,7 @@
                         <strong>${st.station}</strong>
                         <div class="rank-meta">${modeLabel} (${visitsDetail})</div>
                     </div>
-                    <span class="rank-score">${pctText}</span>
+                    <span class="rank-score rank-score-${st.tier}">${pctText}</span>
                 </div>`;
             }).join('');
     }
@@ -866,7 +886,7 @@
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(16);
         doc.setTextColor(0, 83, 159);
-        doc.text('Informe General - Mentoría Puma | Super 7', margin, y);
+        doc.text('Generador de Informes de capacitación', margin, y);
         y += 18;
 
         doc.setFont('helvetica', 'normal');
@@ -966,7 +986,7 @@
             y += 16;
         } else {
             currentGeneralSummary.safetyRisks.forEach(sr => {
-                const header = `• ${sr.station} (${sr.date} — Coach: ${sr.coach})`;
+                const header = `• ${sr.station} (${sr.date} — Capacitador: ${sr.coach})`;
                 const descLines = doc.splitTextToSize(`Descripción: ${sr.description}`, maxWidth - 14);
                 ensureSpace(16 + descLines.length * 13 + 8);
 
@@ -983,7 +1003,7 @@
         }
 
         // 4) Ranking de estaciones
-        addSectionTitle('4) Ranking de estaciones (mayor a menor porcentaje alcanzado)');
+        addSectionTitle('4) Ranking de estaciones (90–100% verde | 80–89% amarillo | <=79% rojo)');
         doc.setFontSize(10);
         if (currentGeneralSummary.stationRanking.length === 0) {
             doc.setFont('helvetica', 'normal');
@@ -1001,9 +1021,15 @@
 
                 ensureSpace(16 + detailLines.length * 12 + 8);
 
+                const [rCol, gCol, bCol] = getScoreRgb(st.avgScore);
                 doc.setFont('helvetica', 'bold');
                 doc.setTextColor(34, 34, 34);
-                doc.text(`#${idx + 1}  ${st.station} — ${pctText}`, margin + 6, y);
+                const prefix = `#${idx + 1}  ${st.station} — `;
+                doc.text(prefix, margin + 6, y);
+                const prefixWidth = doc.getTextWidth(prefix);
+
+                doc.setTextColor(rCol, gCol, bCol);
+                doc.text(pctText, margin + 6 + prefixWidth, y);
                 y += 13;
 
                 doc.setFont('helvetica', 'normal');
@@ -1018,7 +1044,7 @@
         const fileSuffix = currentGeneralSummary.selectedMonth === 'ALL'
             ? 'Todos'
             : currentGeneralSummary.selectedMonth;
-        doc.save(`Informe_General_Mentoria_Puma_${fileSuffix}.pdf`);
+        doc.save(`Informe_Capacitacion_${fileSuffix}.pdf`);
         setStatus('Reporte PDF generado y descargado correctamente.', 'green');
     }
 

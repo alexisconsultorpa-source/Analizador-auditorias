@@ -94,7 +94,7 @@
     const SUPABASE_ANON_KEY = 'sb_publishable__xgxSWRabBBNgVDTXaP91w_shWHV9ur';
     const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-    const MODELS_TO_TRY = ['gemini-3.8-flash', 'gemini-2.5-flash'];
+    const MODEL_NAME = 'gemini-3.8-flash';
 
     let lastExtractedTextBatch = [];
     let lastGeneratedReport = "";
@@ -149,16 +149,17 @@
         if (!apiKey) throw new Error('Falta configurar tu Gemini API Key arriba.');
 
         const base64Pdf = await fileToBase64(file);
-        let lastError = null;
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL_NAME}:generateContent?key=${apiKey}`;
+        const maxRetries = 3;
+        let firstError = null;
 
-        for (const modelName of MODELS_TO_TRY) {
-            const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
             const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 90000);
+            const timeoutId = setTimeout(() => controller.abort(), 75000);
 
             try {
-                if (modelName !== MODELS_TO_TRY[0]) {
-                    setStatus(`Probando modelo de respaldo (${modelName}) para ${file.name}...`, '#b45309');
+                if (attempt > 1) {
+                    setStatus(`Reintentando (${attempt}/${maxRetries}) archivo ${fileIndex + 1} de ${totalFiles}: ${file.name}...`, '#b45309');
                 }
 
                 const response = await fetch(url, {
@@ -185,11 +186,14 @@
 
                 if (data.error) {
                     const errCode = data.error.code || '';
-                    lastError = new Error(`API Gemini (${errCode}): ${data.error.message}`);
-                    if (errCode === 503 || errCode === 429 || errCode === 404) {
+                    const errObj = new Error(`API Gemini (${errCode}): ${data.error.message}`);
+                    if (!firstError) firstError = errObj;
+
+                    if ((errCode === 503 || errCode === 429) && attempt < maxRetries) {
+                        await sleep(3000 * attempt);
                         continue;
                     }
-                    throw lastError;
+                    throw firstError;
                 }
 
                 const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
@@ -198,49 +202,41 @@
 
             } catch (err) {
                 clearTimeout(timeoutId);
-                lastError = err.name === 'AbortError'
-                    ? new Error('Tiempo de espera agotado al procesar el PDF (puede ser muy pesado o el servidor tardó más de 90s).')
+                const currentErr = err.name === 'AbortError'
+                    ? new Error('Tiempo de espera agotado al procesar el PDF.')
                     : err;
-                if (/503|429|404|Failed to fetch|AbortError/i.test(lastError.message)) {
+                if (!firstError) firstError = currentErr;
+
+                const isRetryable = err.name === 'AbortError' || /Failed to fetch|NetworkError|503|429/i.test(currentErr.message);
+                if (isRetryable && attempt < maxRetries) {
+                    await sleep(3000 * attempt);
                     continue;
                 }
-                throw lastError;
+                throw firstError;
             }
         }
 
-        throw lastError || new Error('No se pudo procesar el PDF.');
+        throw firstError || new Error('No se pudo procesar el PDF.');
     }
 
     async function callGeminiText(promptText, systemInstruction) {
         const apiKey = localStorage.getItem('gemini_api_key');
         if (!apiKey) throw new Error('Falta configurar tu Gemini API Key arriba.');
 
-        let lastError = null;
-        for (const modelName of MODELS_TO_TRY) {
-            const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
-            try {
-                const response = await fetch(url, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        systemInstruction: { parts: [{ text: systemInstruction }] },
-                        contents: [{ parts: [{ text: promptText }] }],
-                        generationConfig: { temperature: 0.0 }
-                    })
-                });
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL_NAME}:generateContent?key=${apiKey}`;
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                systemInstruction: { parts: [{ text: systemInstruction }] },
+                contents: [{ parts: [{ text: promptText }] }],
+                generationConfig: { temperature: 0.0 }
+            })
+        });
 
-                const data = await response.json();
-                if (data.error) {
-                    lastError = new Error(`API Gemini (${data.error.code || ''}): ${data.error.message}`);
-                    if (data.error.code === 503 || data.error.code === 429 || data.error.code === 404) continue;
-                    throw lastError;
-                }
-                return data.candidates[0].content.parts[0].text;
-            } catch (err) {
-                lastError = err;
-            }
-        }
-        throw lastError || new Error('No se pudo completar el análisis.');
+        const data = await response.json();
+        if (data.error) throw new Error(`API Gemini: ${data.error.message}`);
+        return data.candidates[0].content.parts[0].text;
     }
 
     async function processBatch(saveToDb) {

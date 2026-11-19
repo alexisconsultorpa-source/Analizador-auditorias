@@ -163,6 +163,50 @@
         box.textContent = text;
     }
 
+    // Normaliza nombres quitando tildes, puntuación extra, mayúsculas y espacios múltiples
+    function normalizePersonKey(name) {
+        if (!name || !name.trim()) return 'sin asignar';
+        return name
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .toLowerCase()
+            .replace(/[^a-z0-9\s]/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+    }
+
+    // Distancia de edición (Levenshtein) para detectar pequeños errores de dedo
+    function levenshteinDistance(a, b) {
+        const m = a.length;
+        const n = b.length;
+        if (m === 0) return n;
+        if (n === 0) return m;
+        const dp = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
+        for (let i = 0; i <= m; i++) dp[i][0] = i;
+        for (let j = 0; j <= n; j++) dp[0][j] = j;
+        for (let i = 1; i <= m; i++) {
+            for (let j = 1; j <= n; j++) {
+                const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+                dp[i][j] = Math.min(
+                    dp[i - 1][j] + 1,
+                    dp[i][j - 1] + 1,
+                    dp[i - 1][j - 1] + cost
+                );
+            }
+        }
+        return dp[m][n];
+    }
+
+    function formatDisplayName(rawName) {
+        if (!rawName || !rawName.trim()) return 'Sin asignar';
+        return rawName
+            .trim()
+            .replace(/\s+/g, ' ')
+            .split(' ')
+            .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+            .join(' ');
+    }
+
     async function extractPdfText(file) {
         if (!window.pdfjsLib) throw new Error('pdf.js no cargó en el navegador.');
         const arrayBuffer = await file.arrayBuffer();
@@ -256,8 +300,8 @@
             ? stationMatch[1].trim()
             : fileName.replace(/\.pdf$/i, '').replace(/[_-]+/g, ' ').trim();
 
-        const coach_name = coachMatch ? coachMatch[1].trim() : null;
-        const supervisor_name = supervisorMatch ? supervisorMatch[1].trim() : null;
+        const coach_name = coachMatch ? formatDisplayName(coachMatch[1].trim()) : null;
+        const supervisor_name = supervisorMatch ? formatDisplayName(supervisorMatch[1].trim()) : null;
         const audit_date = dateMatch ? dateMatch[1] : new Date().toISOString().slice(0, 10);
         const global_level = globalLevelMatch ? globalLevelMatch[1].trim() : null;
         const overall_score = globalPctMatch ? Number(globalPctMatch[1].replace(',', '.')) : null;
@@ -426,8 +470,9 @@
 
         dbList.innerHTML = cachedDbReports.map(r => {
             const colCount = Array.isArray(r.parsed.staff) ? r.parsed.staff.length : (r.parsed.staff_count || 0);
+            const coachClean = formatDisplayName(r.coach_name || 'Sin asignar');
             return `<div style="padding:6px 0; border-bottom:1px solid #f0f0f0;">
-                <strong>Estación:</strong> ${r.station_name || 'N/A'} | <strong>Fecha:</strong> ${r.audit_date || 'N/A'} | <strong>Coach:</strong> ${r.coach_name || 'N/A'} | <strong>Col.:</strong> ${colCount} | <strong>Puntaje:</strong> ${r.overall_score ?? 'N/A'}%
+                <strong>Estación:</strong> ${r.station_name || 'N/A'} | <strong>Fecha:</strong> ${r.audit_date || 'N/A'} | <strong>Coach:</strong> ${coachClean} | <strong>Col.:</strong> ${colCount} | <strong>Puntaje:</strong> ${r.overall_score ?? 'N/A'}%
             </div>`;
         }).join('');
     }
@@ -457,6 +502,32 @@
         }
     }
 
+    // Agrupa capacitadores reconociendo tildes, mayúsculas/minúsculas y pequeños errores de dedo
+    function resolveCanonicalCoach(rawName, coachClusters) {
+        const displayName = formatDisplayName(rawName || 'Sin asignar');
+        const normKey = normalizePersonKey(rawName || 'sin asignar');
+
+        if (normKey === 'sin asignar') {
+            return { key: 'sin asignar', label: 'Sin asignar' };
+        }
+
+        for (const cluster of coachClusters) {
+            if (cluster.key === normKey) {
+                return cluster;
+            }
+            const maxLen = Math.max(cluster.key.length, normKey.length);
+            const allowedTypos = maxLen >= 8 ? 2 : 1;
+            const dist = levenshteinDistance(cluster.key, normKey);
+            if (dist <= allowedTypos) {
+                return cluster;
+            }
+        }
+
+        const newCluster = { key: normKey, label: displayName };
+        coachClusters.push(newCluster);
+        return newCluster;
+    }
+
     function renderGeneralReport() {
         const selectedMonth = document.getElementById('monthFilter').value;
         const filtered = selectedMonth === 'ALL'
@@ -466,13 +537,14 @@
         document.getElementById('kpiVisits').textContent = filtered.length;
 
         let totalStaff = 0;
+        const coachClusters = [];
         const visitsByCoach = {};
         const issueCounts = {};
         const safetyRisks = [];
 
         filtered.forEach(r => {
-            const coach = (r.coach_name || 'Sin asignar').trim();
-            visitsByCoach[coach] = (visitsByCoach[coach] || 0) + 1;
+            const coachCluster = resolveCanonicalCoach(r.coach_name, coachClusters);
+            visitsByCoach[coachCluster.key] = (visitsByCoach[coachCluster.key] || 0) + 1;
 
             const p = r.parsed || {};
             const staffArr = Array.isArray(p.staff) ? p.staff : [];
@@ -497,7 +569,7 @@
                 safetyRisks.push({
                     station: r.station_name || 'Sin estación',
                     date: r.audit_date || 'Sin fecha',
-                    coach,
+                    coach: coachCluster.label,
                     description: p.safety_observations
                 });
             }
@@ -506,10 +578,16 @@
         document.getElementById('kpiStaff').textContent = totalStaff;
         document.getElementById('kpiSafetyRisks').textContent = safetyRisks.length;
 
-        const coachEntries = Object.entries(visitsByCoach).sort((a, b) => b[1] - a[1]);
+        const coachEntries = Object.entries(visitsByCoach)
+            .map(([key, count]) => {
+                const found = coachClusters.find(c => c.key === key);
+                return { label: found ? found.label : key, count };
+            })
+            .sort((a, b) => b.count - a.count);
+
         document.getElementById('visitsByCoachBox').innerHTML = coachEntries.length === 0
             ? 'No hay visitas registradas en el período seleccionado.'
-            : coachEntries.map(([coach, count]) => `<div>• <strong>${coach}:</strong> ${count} visita(s)</div>`).join('');
+            : coachEntries.map(item => `<div>• <strong>${item.label}:</strong> ${item.count} visita(s)</div>`).join('');
 
         const issueEntries = Object.entries(issueCounts).sort((a, b) => b[1] - a[1]);
         document.getElementById('commonIssuesBox').innerHTML = issueEntries.length === 0

@@ -26,6 +26,7 @@
         .btn-green { background: #1e7e34; }
         .btn-dark { background: #343a40; }
         .btn-outline-red { background: #fff; color: var(--secondary); border: 1.5px solid var(--secondary); }
+        .btn-danger-solid { background: var(--secondary); color: #fff; }
         .progress-container { width: 100%; background: #e9ecef; border-radius: 6px; height: 10px; margin-top: 15px; display: none; overflow: hidden; }
         .progress-bar { height: 100%; background: var(--primary); width: 0%; transition: width 0.3s; }
         #statusMsg { margin-top: 12px; font-size: 13px; font-weight: 600; text-align: center; word-break: break-word; }
@@ -34,7 +35,7 @@
         .db-box { background: #fcfcfd; border: 1px solid #e2e6ea; border-radius: 10px; padding: 15px; margin-top: 12px; }
         .db-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
         .db-row input { flex: 1; min-width: 180px; }
-        #dbList { margin-top: 12px; font-size: 13px; color: #333; max-height: 240px; overflow-y: auto; background: #fff; border: 1px solid #eee; border-radius: 6px; padding: 10px; }
+        #dbList { margin-top: 12px; font-size: 13px; color: #333; max-height: 260px; overflow-y: auto; background: #fff; border: 1px solid #eee; border-radius: 6px; padding: 10px; }
         .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-top: 12px; }
         .kpi-card { background: #f8f9fa; border: 1px solid #e2e6ea; border-radius: 8px; padding: 14px; }
         .kpi-label { font-size: 12px; color: #555; }
@@ -113,10 +114,12 @@
     <div class="db-box">
         <div class="btn-group" style="justify-content: flex-start; margin-bottom: 12px;">
             <button id="btnLoadDb" class="btn-dark" onclick="refreshAllFromDb()">📋 Ver Reportes Guardados</button>
+            <button id="btnDeleteAll" class="btn-danger-solid" onclick="deleteAllReports()">⚠️ Borrar Todos los Informes</button>
         </div>
         <div class="db-row">
-            <input type="text" id="deleteReportId" class="text-input" placeholder="Pega aquí el ID del reporte a eliminar">
-            <button id="btnDeleteOne" class="btn-outline-red" onclick="deleteReportById()">🗑️ Borrar Reporte por ID</button>
+            <input type="text" id="deleteStationName" class="text-input" list="stationSuggestions" placeholder="Escribe o selecciona el nombre de la estación a eliminar">
+            <datalist id="stationSuggestions"></datalist>
+            <button id="btnDeleteByName" class="btn-outline-red" onclick="deleteReportByStationName()">🗑️ Borrar por Nombre</button>
         </div>
         <div id="dbList">Toca "Ver Reportes Guardados" para consultar los registros actuales.</div>
     </div>
@@ -186,7 +189,6 @@
             .replace(/#\s*\|\s*Rol\s*\|\s*Nombre Colaborador\s*\|\s*Puntaje Obt\.\s*\|\s*%\s*Ajustado\s*\|\s*Nivel/i, '')
             .replace(/\|\s*/g, ' ');
 
-        // Busca ocurrencias de "puntaje X/Y" seguido de porcentaje y nivel
         const entryRegex = /(\d+)\s+(Agente(?:\s+de)?\s+Pista|Agente(?:\s+de)?\s+Tienda|Cajero|Supervisor|Encargado|[A-ZÁÉÍÓÚÑ][a-zA-ZáéíóúñÁÉÍÓÚÑ]+\s+(?:Pista|Tienda))\s+(.+?)\s+(\d+\s*\/\s*\d+)\s+(\d+(?:[.,]\d+)?\s*%)\s+(Necesita Mejora|En desarrollo|Competente|Excelente)/gi;
         let m;
         while ((m = entryRegex.exec(block)) !== null) {
@@ -217,7 +219,6 @@
         const isEmptyNote = (val) => !val || /^(sin observaciones registradas\.?|n\/a|ninguna\.?)$/i.test(val.trim());
         const has_safety_risk = !isEmptyNote(safety_observations);
 
-        // Extrae comentarios individuales relevantes (que no digan "Sin observaciones registradas.")
         const individual_findings = [];
         const staffObsSectionMatch = obsBlock.match(/Observaciones y Compromisos del Coach\s*(.+?)(?=OBSERVACIONES GENERALES DE LA ESTACI[ÓO]N|$)/i);
         if (staffObsSectionMatch) {
@@ -402,7 +403,7 @@
             .from('audit_reports')
             .select('id, station_name, audit_date, coach_name, overall_score, raw_summary')
             .order('audit_date', { ascending: false })
-            .limit(200);
+            .limit(300);
 
         if (error) {
             dbList.innerHTML = `<span style="color:#842029;">Error al consultar BD: ${error.message}</span>`;
@@ -415,6 +416,7 @@
         }));
 
         populateMonthFilter();
+        populateStationSuggestions();
         renderGeneralReport();
 
         if (cachedDbReports.length === 0) {
@@ -425,9 +427,17 @@
         dbList.innerHTML = cachedDbReports.map(r => {
             const colCount = Array.isArray(r.parsed.staff) ? r.parsed.staff.length : (r.parsed.staff_count || 0);
             return `<div style="padding:6px 0; border-bottom:1px solid #f0f0f0;">
-                <strong>ID:</strong> <code>${r.id}</code> | <strong>Estación:</strong> ${r.station_name || 'N/A'} | <strong>Fecha:</strong> ${r.audit_date || 'N/A'} | <strong>Coach:</strong> ${r.coach_name || 'N/A'} | <strong>Col.:</strong> ${colCount} | <strong>Puntaje:</strong> ${r.overall_score ?? 'N/A'}%
+                <strong>Estación:</strong> ${r.station_name || 'N/A'} | <strong>Fecha:</strong> ${r.audit_date || 'N/A'} | <strong>Coach:</strong> ${r.coach_name || 'N/A'} | <strong>Col.:</strong> ${colCount} | <strong>Puntaje:</strong> ${r.overall_score ?? 'N/A'}%
             </div>`;
         }).join('');
+    }
+
+    function populateStationSuggestions() {
+        const datalist = document.getElementById('stationSuggestions');
+        const names = [...new Set(
+            cachedDbReports.map(r => (r.station_name || '').trim()).filter(Boolean)
+        )].sort();
+        datalist.innerHTML = names.map(n => `<option value="${n.replace(/"/g, '&quot;')}"></option>`).join('');
     }
 
     function populateMonthFilter() {
@@ -468,7 +478,6 @@
             const staffArr = Array.isArray(p.staff) ? p.staff : [];
             totalStaff += staffArr.length > 0 ? staffArr.length : (Number(p.staff_count) || 0);
 
-            // Fallas desde hallazgos individuales y observaciones generales
             (p.individual_findings || []).forEach(f => {
                 const key = f.comment.trim();
                 if (key) issueCounts[key] = (issueCounts[key] || 0) + 1;
@@ -497,19 +506,16 @@
         document.getElementById('kpiStaff').textContent = totalStaff;
         document.getElementById('kpiSafetyRisks').textContent = safetyRisks.length;
 
-        // 1. Visitas por capacitador
         const coachEntries = Object.entries(visitsByCoach).sort((a, b) => b[1] - a[1]);
         document.getElementById('visitsByCoachBox').innerHTML = coachEntries.length === 0
             ? 'No hay visitas registradas en el período seleccionado.'
             : coachEntries.map(([coach, count]) => `<div>• <strong>${coach}:</strong> ${count} visita(s)</div>`).join('');
 
-        // 2. Fallas más comunes
         const issueEntries = Object.entries(issueCounts).sort((a, b) => b[1] - a[1]);
         document.getElementById('commonIssuesBox').innerHTML = issueEntries.length === 0
             ? '<span class="clean-note">No se detectaron fallas u observaciones registradas en el período.</span>'
             : issueEntries.map(([issue, count]) => `<div>• <strong>(${count})</strong> ${issue}</div>`).join('');
 
-        // 3. Riesgos de seguridad
         document.getElementById('safetyRisksBox').innerHTML = safetyRisks.length === 0
             ? '<span class="clean-note">Ninguna estación reporta riesgos de seguridad en el período seleccionado.</span>'
             : safetyRisks.map(sr =>
@@ -520,32 +526,82 @@
             ).join('');
     }
 
-    async function deleteReportById() {
-        const idInput = document.getElementById('deleteReportId').value.trim();
-        if (!idInput) return alert('Escribe o pega el ID del reporte que deseas eliminar.');
+    async function deleteReportByStationName() {
+        const nameInput = document.getElementById('deleteStationName').value.trim();
+        if (!nameInput) return alert('Escribe o selecciona el nombre de la estación a eliminar.');
 
-        const confirmed = confirm(`¿Seguro que deseas eliminar el reporte con ID "${idInput}"?`);
+        const matches = cachedDbReports.filter(
+            r => (r.station_name || '').trim().toLowerCase() === nameInput.toLowerCase()
+        );
+
+        const targetName = matches.length > 0 ? matches[0].station_name : nameInput;
+        const confirmed = confirm(
+            `¿Seguro que deseas eliminar ${matches.length > 0 ? matches.length + ' informe(s) de' : 'los informes que coincidan con'} "${targetName}"?`
+        );
         if (!confirmed) return;
 
         showErrorDetails('');
-        await supabaseClient.from('audit_evaluated_staff').delete().eq('report_id', idInput);
-        await supabaseClient.from('audit_rubric_scores').delete().eq('report_id', idInput);
+        setButtonsDisabled(true);
 
-        const { error } = await supabaseClient.from('audit_reports').delete().eq('id', idInput);
-        if (error) {
-            setStatus(`No se pudo eliminar: ${error.message}`, 'red');
-            showErrorDetails(error.message);
-            return;
+        try {
+            const idsToDelete = matches.map(m => m.id);
+            if (idsToDelete.length > 0) {
+                await supabaseClient.from('audit_evaluated_staff').delete().in('report_id', idsToDelete);
+                await supabaseClient.from('audit_rubric_scores').delete().in('report_id', idsToDelete);
+                const { error } = await supabaseClient.from('audit_reports').delete().in('id', idsToDelete);
+                if (error) throw new Error(error.message);
+            } else {
+                const { error } = await supabaseClient.from('audit_reports').delete().ilike('station_name', nameInput);
+                if (error) throw new Error(error.message);
+            }
+
+            document.getElementById('deleteStationName').value = '';
+            setStatus(`Informe(s) de "${targetName}" eliminado(s) correctamente.`, 'green');
+            await refreshAllFromDb();
+        } catch (err) {
+            setStatus(`No se pudo eliminar: ${err.message}`, 'red');
+            showErrorDetails(err.message);
+        } finally {
+            setButtonsDisabled(false);
+        }
+    }
+
+    async function deleteAllReports() {
+        if (cachedDbReports.length === 0) {
+            return alert('No hay informes guardados para borrar.');
         }
 
-        document.getElementById('deleteReportId').value = '';
-        setStatus(`Reporte ${idInput} eliminado correctamente de la base de datos.`, 'green');
-        refreshAllFromDb();
+        const firstConfirm = confirm(`¿Seguro que deseas borrar TODOS los ${cachedDbReports.length} informe(s) guardados en Supabase?`);
+        if (!firstConfirm) return;
+
+        const secondConfirm = confirm('Esta acción eliminará todos los registros de prueba de la base de datos. ¿Confirmas borrar todo?');
+        if (!secondConfirm) return;
+
+        showErrorDetails('');
+        setButtonsDisabled(true);
+
+        try {
+            await supabaseClient.from('audit_evaluated_staff').delete().not('id', 'is', null);
+            await supabaseClient.from('audit_rubric_scores').delete().not('id', 'is', null);
+            const { error } = await supabaseClient.from('audit_reports').delete().not('id', 'is', null);
+            if (error) throw new Error(error.message);
+
+            document.getElementById('deleteStationName').value = '';
+            setStatus('Todos los informes fueron eliminados correctamente de Supabase.', 'green');
+            await refreshAllFromDb();
+        } catch (err) {
+            setStatus(`Error al borrar todos los informes: ${err.message}`, 'red');
+            showErrorDetails(err.message);
+        } finally {
+            setButtonsDisabled(false);
+        }
     }
 
     function setButtonsDisabled(state) {
         document.getElementById('btnPreview').disabled = state;
         document.getElementById('btnUploadNoAi').disabled = state;
+        document.getElementById('btnDeleteByName').disabled = state;
+        document.getElementById('btnDeleteAll').disabled = state;
     }
 </script>
 

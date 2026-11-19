@@ -47,6 +47,10 @@
         .issue-row { padding: 8px 10px; border-bottom: 1px solid #f0f0f0; }
         .badge-f { display: inline-block; background: #fff5f5; color: #c62828; border: 1px solid #f5c2c7; font-weight: 700; padding: 2px 7px; border-radius: 6px; font-size: 12px; margin-right: 6px; }
         .badge-c { display: inline-block; background: #eefaf0; color: #1e7e34; border: 1px solid #b7e4c0; font-weight: 700; padding: 2px 7px; border-radius: 6px; font-size: 12px; margin-right: 8px; }
+        .rank-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 9px 10px; border-bottom: 1px solid #f0f0f0; flex-wrap: wrap; }
+        .rank-pos { font-weight: 700; color: var(--primary); margin-right: 6px; }
+        .rank-score { font-weight: 700; color: #1e7e34; background: #eefaf0; border: 1px solid #b7e4c0; padding: 3px 9px; border-radius: 999px; font-size: 12px; }
+        .rank-meta { font-size: 12px; color: #555; margin-top: 2px; }
         .issue-breakdown { color: #555; font-size: 12px; margin-top: 4px; }
         .risk-alert { background: #fff5f5; border-left: 4px solid var(--secondary); padding: 10px 12px; margin: 8px 0; border-radius: 4px; }
         .clean-note { color: #1e7e34; font-weight: 600; }
@@ -120,6 +124,14 @@
             <h3>3) Estaciones con riesgos de seguridad y descripción del riesgo</h3>
             <div id="safetyRisksBox">Sin datos cargados.</div>
         </div>
+
+        <div class="report-section">
+            <h3>4) Ranking de estaciones (mayor a menor porcentaje alcanzado)</h3>
+            <p class="subtitle" style="margin-bottom:8px; font-size:12px;">
+                Si una estación tiene más de una visita en el período, se promedia el porcentaje de sus visitas.
+            </p>
+            <div id="stationRankingBox">Sin datos cargados.</div>
+        </div>
     </div>
 
     <h2>3. Control y Limpieza de Base de Datos (Supabase)</h2>
@@ -179,7 +191,8 @@
         coachEntries: [],
         pistaRows: [],
         tiendaRows: [],
-        safetyRisks: []
+        safetyRisks: [],
+        stationRanking: []
     };
 
     window.onload = () => {
@@ -646,6 +659,53 @@
         }).join('');
     }
 
+    function buildStationRanking(filteredReports) {
+        const map = {};
+
+        filteredReports.forEach(r => {
+            const rawStation = (r.station_name || 'Sin estación').trim();
+            const key = normalizeText(rawStation) || 'sin estacion';
+            const score = typeof r.overall_score === 'number' && !Number.isNaN(r.overall_score)
+                ? r.overall_score
+                : (r.overall_score !== null && r.overall_score !== undefined && r.overall_score !== ''
+                    ? Number(String(r.overall_score).replace(',', '.'))
+                    : null);
+
+            if (!map[key]) {
+                map[key] = {
+                    station: rawStation,
+                    visits: []
+                };
+            }
+
+            map[key].visits.push({
+                date: r.audit_date || 'Sin fecha',
+                score: Number.isNaN(score) ? null : score
+            });
+        });
+
+        return Object.values(map)
+            .map(entry => {
+                const validScores = entry.visits.map(v => v.score).filter(s => typeof s === 'number' && !Number.isNaN(s));
+                const avgScore = validScores.length > 0
+                    ? Number((validScores.reduce((acc, val) => acc + val, 0) / validScores.length).toFixed(1))
+                    : null;
+
+                return {
+                    station: entry.station,
+                    visitCount: entry.visits.length,
+                    avgScore,
+                    visits: entry.visits
+                };
+            })
+            .sort((a, b) => {
+                if (a.avgScore === null && b.avgScore === null) return a.station.localeCompare(b.station);
+                if (a.avgScore === null) return 1;
+                if (b.avgScore === null) return -1;
+                return b.avgScore - a.avgScore || b.visitCount - a.visitCount;
+            });
+    }
+
     function renderGeneralReport() {
         const selectedMonth = document.getElementById('monthFilter').value;
         const filtered = selectedMonth === 'ALL'
@@ -715,6 +775,7 @@
 
         const pistaRows = getSortedRubricRows(pistaStats);
         const tiendaRows = getSortedRubricRows(tiendaStats);
+        const stationRanking = buildStationRanking(filtered);
 
         currentGeneralSummary = {
             selectedMonth,
@@ -724,7 +785,8 @@
             coachEntries,
             pistaRows,
             tiendaRows,
-            safetyRisks
+            safetyRisks,
+            stationRanking
         };
 
         document.getElementById('visitsByCoachBox').innerHTML = coachEntries.length === 0
@@ -743,6 +805,27 @@
                     <span>${sr.description}</span>
                 </div>`
             ).join('');
+
+        document.getElementById('stationRankingBox').innerHTML = stationRanking.length === 0
+            ? 'No hay estaciones registradas en el período seleccionado.'
+            : stationRanking.map((st, index) => {
+                const pctText = st.avgScore !== null ? `${st.avgScore}%` : 'N/A';
+                const visitsDetail = st.visits
+                    .map(v => `${v.date}: ${v.score !== null ? v.score + '%' : 'N/A'}`)
+                    .join(' | ');
+                const modeLabel = st.visitCount > 1
+                    ? `Promedio de ${st.visitCount} visitas`
+                    : '1 visita';
+
+                return `<div class="rank-row">
+                    <div>
+                        <span class="rank-pos">#${index + 1}</span>
+                        <strong>${st.station}</strong>
+                        <div class="rank-meta">${modeLabel} (${visitsDetail})</div>
+                    </div>
+                    <span class="rank-score">${pctText}</span>
+                </div>`;
+            }).join('');
     }
 
     function exportGeneralReportPdf() {
@@ -896,6 +979,39 @@
                 doc.setTextColor(34, 34, 34);
                 doc.text(descLines, margin + 14, y);
                 y += descLines.length * 13 + 8;
+            });
+        }
+
+        // 4) Ranking de estaciones
+        addSectionTitle('4) Ranking de estaciones (mayor a menor porcentaje alcanzado)');
+        doc.setFontSize(10);
+        if (currentGeneralSummary.stationRanking.length === 0) {
+            doc.setFont('helvetica', 'normal');
+            doc.setTextColor(100, 100, 100);
+            doc.text('No hay estaciones registradas en el período seleccionado.', margin + 6, y);
+            y += 16;
+        } else {
+            currentGeneralSummary.stationRanking.forEach((st, idx) => {
+                const pctText = st.avgScore !== null ? `${st.avgScore}%` : 'N/A';
+                const modeLabel = st.visitCount > 1 ? `Promedio de ${st.visitCount} visitas` : '1 visita';
+                const visitsDetail = st.visits
+                    .map(v => `${v.date}: ${v.score !== null ? v.score + '%' : 'N/A'}`)
+                    .join(' | ');
+                const detailLines = doc.splitTextToSize(`${modeLabel} (${visitsDetail})`, maxWidth - 20);
+
+                ensureSpace(16 + detailLines.length * 12 + 8);
+
+                doc.setFont('helvetica', 'bold');
+                doc.setTextColor(34, 34, 34);
+                doc.text(`#${idx + 1}  ${st.station} — ${pctText}`, margin + 6, y);
+                y += 13;
+
+                doc.setFont('helvetica', 'normal');
+                doc.setFontSize(9);
+                doc.setTextColor(90, 90, 90);
+                doc.text(detailLines, margin + 16, y);
+                doc.setFontSize(10);
+                y += detailLines.length * 12 + 7;
             });
         }
 

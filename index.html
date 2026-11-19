@@ -168,7 +168,7 @@
         'Promoción e Interacción Puma Pris',
         'Revisión de Fluidos e Impulso de Lubricantes',
         'Conocimientos Generales de Puma Flota',
-        'Conocimientos Generales de Seguridad y Control de Cisternas',
+        'Conocimientos Generales de Seguridad',
         'Conocimiento General de lubricantes',
         'Evaluación Puma Teams',
         'Área de Trabajo'
@@ -249,6 +249,22 @@
             .replace(/[^a-z0-9\s]/g, ' ')
             .replace(/\s+/g, ' ')
             .trim();
+    }
+
+    function canonicalRubricKey(criterion) {
+        const norm = normalizeText(criterion);
+        if (norm.startsWith('conocimientos generales de seguridad')) {
+            return 'conocimientos generales de seguridad';
+        }
+        return norm;
+    }
+
+    function formatCriterionLabel(criterion) {
+        const norm = normalizeText(criterion);
+        if (norm.startsWith('conocimientos generales de seguridad')) {
+            return 'Conocimientos Generales de Seguridad';
+        }
+        return criterion;
     }
 
     function levenshteinDistance(a, b) {
@@ -350,12 +366,19 @@
             const normBody = normalizeText(matchedBlock.body);
 
             const rubric = expectedItems.map(item => {
-                const normItem = normalizeText(item);
-                const pos = normBody.indexOf(normItem);
-                let score = null;
+                const searchPhrase = canonicalRubricKey(item) === 'conocimientos generales de seguridad'
+                    ? 'conocimientos generales de seguridad y control de cisternas'
+                    : normalizeText(item);
+                let pos = normBody.indexOf(searchPhrase);
+                let matchedPhrase = searchPhrase;
+                if (pos === -1) {
+                    matchedPhrase = normalizeText(item);
+                    pos = normBody.indexOf(matchedPhrase);
+                }
 
+                let score = null;
                 if (pos !== -1) {
-                    const windowAfter = normBody.slice(pos + normItem.length, pos + normItem.length + 35);
+                    const windowAfter = normBody.slice(pos + matchedPhrase.length, pos + matchedPhrase.length + 35);
                     const naMatch = windowAfter.match(/\bn\s*a\b/);
                     const numMatch = windowAfter.match(/\b([1-4])\b/);
                     if (naMatch && (!numMatch || naMatch.index < numMatch.index)) {
@@ -365,7 +388,7 @@
                     }
                 }
 
-                return { criterion: item, score };
+                return { criterion: formatCriterionLabel(item), score };
             });
 
             return { ...person, rubric };
@@ -642,8 +665,9 @@
     function buildRubricStats(templateItems) {
         const map = {};
         templateItems.forEach(item => {
-            map[normalizeText(item)] = {
-                criterion: item,
+            const label = formatCriterionLabel(item);
+            map[canonicalRubricKey(label)] = {
+                criterion: label,
                 c1: 0,
                 c2: 0,
                 c3: 0,
@@ -755,10 +779,11 @@
                 const rubricArr = Array.isArray(person.rubric) ? person.rubric : [];
 
                 rubricArr.forEach(entry => {
-                    const key = normalizeText(entry.criterion);
+                    const label = formatCriterionLabel(entry.criterion);
+                    const key = canonicalRubricKey(label);
                     if (!targetMap[key]) {
                         targetMap[key] = {
-                            criterion: entry.criterion,
+                            criterion: label,
                             c1: 0,
                             c2: 0,
                             c3: 0,
@@ -882,7 +907,6 @@
             doc.setTextColor(34, 34, 34);
         };
 
-        // Título principal
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(16);
         doc.setTextColor(0, 83, 159);
@@ -898,7 +922,6 @@
         doc.text(`${periodLabel}  |  Generado: ${new Date().toISOString().slice(0, 10)}`, margin, y);
         y += 17;
 
-        // KPIs
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(10.5);
         doc.setTextColor(34, 34, 34);
@@ -909,7 +932,6 @@
         );
         y += 15;
 
-        // 1) Visitas por capacitador
         addSectionTitle('1) Visitas en el mes por capacitador');
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(10);
@@ -924,7 +946,6 @@
             });
         }
 
-        // 2) Fallas más comunes en 2 columnas (Agente de Pista | Agente de Tienda)
         addSectionTitle('2) Fallas más comunes (F = Fallas [1, 2, 3] | C = Cumplimiento [4])');
         const colGap = 18;
         const twoColWidth = (contentWidth - colGap) / 2;
@@ -941,9 +962,10 @@
         ensureSpace(34);
         y = drawTwoColHeader(y);
 
-        const renderRubricItemInColumn = (r, colX, colW, curY) => {
+        const renderRubricItemInColumn = (r, colX, colW) => {
+            const label = formatCriterionLabel(r.criterion);
             const totalScored = r.c1 + r.c2 + r.c3 + r.c4;
-            const critLines = doc.splitTextToSize(r.criterion, colW - 6);
+            const critLines = doc.splitTextToSize(label, colW - 6);
             const breakdownText = `1:${r.c1} | 2:${r.c2} | 3:${r.c3} | 4:${r.c4} (Tot:${totalScored})`;
             const blockHeight = 13 + critLines.length * 11.5 + 12 + 8;
 
@@ -997,7 +1019,7 @@
             let rowConsumed = 0;
 
             if (pIdx < pistaItems.length) {
-                const itemObj = renderRubricItemInColumn(pistaItems[pIdx], margin, twoColWidth, y);
+                const itemObj = renderRubricItemInColumn(pistaItems[pIdx], margin, twoColWidth);
                 if (y + itemObj.height <= pageHeight - 36 || tIdx >= tiendaItems.length) {
                     if (y + itemObj.height > pageHeight - 36) {
                         doc.addPage();
@@ -1011,7 +1033,7 @@
             }
 
             if (tIdx < tiendaItems.length) {
-                const itemObj = renderRubricItemInColumn(tiendaItems[tIdx], margin + twoColWidth + colGap, twoColWidth, y);
+                const itemObj = renderRubricItemInColumn(tiendaItems[tIdx], margin + twoColWidth + colGap, twoColWidth);
                 if (y + itemObj.height <= pageHeight - 36 || pIdx >= pistaItems.length) {
                     if (y + itemObj.height > pageHeight - 36) {
                         doc.addPage();
@@ -1033,7 +1055,6 @@
             }
         }
 
-        // 3) Riesgos de seguridad
         addSectionTitle('3) Estaciones con riesgos de seguridad y descripción del riesgo');
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(10);
@@ -1059,7 +1080,6 @@
             });
         }
 
-        // 4) Ranking De Estaciones en 3 columnas
         addSectionTitle('4) Ranking De Estaciones');
         if (currentGeneralSummary.stationRanking.length === 0) {
             doc.setFont('helvetica', 'normal');

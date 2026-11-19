@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Analizador de Auditorías Puma Energy</title>
+    <style>
+        body { font-family: sans-serif; background-color: #f4f6f9; margin: 0; padding: 20px; }
+        .container { max-width: 800px; margin: 40px auto; background: #fff; padding: 30px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
+        h1 { color: #00539F; margin-bottom: 8px; }
+        p { color: #555; margin-bottom: 24px; }
+        .dropzone { border: 2px dashed #00539F; border-radius: 12px; padding: 30px; text-align: center; background: #f9f9f9; }
+        input[type="file"] { margin-bottom: 16px; display: block; margin: 0 auto 16px auto; }
+        button { background: #00539F; color: #fff; border: none; padding: 10px 24px; border-radius: 6px; font-size: 16px; cursor: pointer; }
+        button:disabled { background: #ccc; }
+        #message { margin-top: 20px; font-weight: bold; color: #333; text-align: center; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>Analizador de Auditorías Puma Energy</h1>
+    <p>Sube o arrastra el reporte en PDF de la estación para extraer métricas, evaluaciones y hallazgos sin errores.</p>
+
+    <div class="dropzone">
+        <input type="file" id="pdfFile" accept=".pdf">
+        <button id="uploadBtn" onclick="handleUpload()">Analizar y Guardar en Base de Datos</button>
+    </div>
+
+    <p id="message"></p>
+</div>
+
+<script>
+    function handleUpload() {
+        const fileInput = document.getElementById('pdfFile');
+        const message = document.getElementById('message');
+        const btn = document.getElementById('uploadBtn');
+
+        if (fileInput.files.length === 0) {
+            message.textContent = 'Por favor selecciona un archivo PDF primero.';
+            message.style.color = 'red';
+            return;
+        }
+
+        btn.disabled = true;
+        btn.textContent = 'Procesando...';
+        message.textContent = 'Procesando reporte de auditoría...';
+        message.style.color = '#00539F';
+
+        setTimeout(() => {
+            btn.disabled = false;
+            btn.textContent = 'Analizar y Guardar en Base de Datos';
+            message.textContent = '¡Estructura lista para conectar con Supabase e IA!';
+            message.style.color = 'green';
+        }, 2000);
+    }
+</script>
+
+</body>
+</html>

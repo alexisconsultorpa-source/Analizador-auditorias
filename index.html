@@ -43,8 +43,9 @@
         .kpi-value { font-size: 22px; font-weight: 700; color: var(--primary); margin-top: 4px; }
         .report-section { background: #fff; border: 1px solid #e2e6ea; border-radius: 8px; padding: 14px; margin-top: 12px; font-size: 13px; }
         .issue-row { padding: 8px 10px; border-bottom: 1px solid #f0f0f0; }
-        .issue-badge-lt4 { display: inline-block; background: #fff5f5; color: var(--secondary); border: 1px solid #f5c2c7; font-weight: 700; padding: 2px 7px; border-radius: 999px; font-size: 12px; margin-right: 6px; }
-        .issue-breakdown { color: #555; font-size: 12px; margin-top: 3px; }
+        .badge-f { display: inline-block; background: #fff5f5; color: #c62828; border: 1px solid #f5c2c7; font-weight: 700; padding: 2px 7px; border-radius: 6px; font-size: 12px; margin-right: 6px; }
+        .badge-c { display: inline-block; background: #eefaf0; color: #1e7e34; border: 1px solid #b7e4c0; font-weight: 700; padding: 2px 7px; border-radius: 6px; font-size: 12px; margin-right: 8px; }
+        .issue-breakdown { color: #555; font-size: 12px; margin-top: 4px; }
         .risk-alert { background: #fff5f5; border-left: 4px solid var(--secondary); padding: 10px 12px; margin: 8px 0; border-radius: 4px; }
         .clean-note { color: #1e7e34; font-weight: 600; }
     </style>
@@ -104,8 +105,11 @@
         </div>
 
         <div class="report-section">
-            <h3>2) Fallas más comunes (Calificaciones &lt; 4 y conteo de 1, 2, 3 y 4)</h3>
-            <p class="subtitle" style="margin-bottom:8px; font-size:12px;">Criterio: 4 = cumplimiento perfecto; &lt; 4 (1, 2 o 3) = cumplimiento parcial / punto de mejora.</p>
+            <h3>2) Fallas más comunes</h3>
+            <p class="subtitle" style="margin-bottom:8px; font-size:12px;">
+                <strong style="color:#c62828;">F</strong> = Fallas (calificaciones 1, 2 o 3) &nbsp;|&nbsp;
+                <strong style="color:#1e7e34;">C</strong> = Cumplimiento (calificación 4).
+            </p>
             <div id="commonIssuesBox">Sin datos cargados.</div>
         </div>
 
@@ -617,7 +621,8 @@
         return `<h4>${title}</h4>` + rows.map(r => {
             const totalScored = r.c1 + r.c2 + r.c3 + r.c4;
             return `<div class="issue-row">
-                <span class="issue-badge-lt4">&lt;4: ${r.lt4}</span>
+                <span class="badge-f">F: ${r.lt4}</span>
+                <span class="badge-c">C: ${r.c4}</span>
                 <strong>${r.criterion}</strong>
                 <div class="issue-breakdown">
                     Calificaciones: <strong>1</strong> = ${r.c1} | <strong>2</strong> = ${r.c2} | <strong>3</strong> = ${r.c3} | <strong>4</strong> = ${r.c4} (Total evaluadas: ${totalScored})

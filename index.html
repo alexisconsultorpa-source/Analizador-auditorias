@@ -13,6 +13,7 @@
         h1 { color: var(--primary); margin: 0 0 6px 0; font-size: 22px; }
         h2 { color: var(--primary); font-size: 17px; margin-top: 26px; border-bottom: 2px solid #eee; padding-bottom: 6px; }
         h3 { color: #222; font-size: 15px; margin: 14px 0 6px 0; }
+        h4 { color: var(--primary); font-size: 14px; margin: 12px 0 6px 0; }
         p.subtitle { color: #555; margin: 0 0 16px 0; font-size: 14px; }
         .dropzone { border: 2px dashed var(--primary); border-radius: 10px; padding: 20px; text-align: center; background: #fafbfd; }
         input[type="file"] { margin: 0 auto 15px auto; display: block; max-width: 100%; }
@@ -41,6 +42,9 @@
         .kpi-label { font-size: 12px; color: #555; }
         .kpi-value { font-size: 22px; font-weight: 700; color: var(--primary); margin-top: 4px; }
         .report-section { background: #fff; border: 1px solid #e2e6ea; border-radius: 8px; padding: 14px; margin-top: 12px; font-size: 13px; }
+        .issue-row { padding: 8px 10px; border-bottom: 1px solid #f0f0f0; }
+        .issue-badge-lt4 { display: inline-block; background: #fff5f5; color: var(--secondary); border: 1px solid #f5c2c7; font-weight: 700; padding: 2px 7px; border-radius: 999px; font-size: 12px; margin-right: 6px; }
+        .issue-breakdown { color: #555; font-size: 12px; margin-top: 3px; }
         .risk-alert { background: #fff5f5; border-left: 4px solid var(--secondary); padding: 10px 12px; margin: 8px 0; border-radius: 4px; }
         .clean-note { color: #1e7e34; font-weight: 600; }
     </style>
@@ -100,7 +104,8 @@
         </div>
 
         <div class="report-section">
-            <h3>2) Fallas más comunes</h3>
+            <h3>2) Fallas más comunes (Calificaciones &lt; 4 y conteo de 1, 2, 3 y 4)</h3>
+            <p class="subtitle" style="margin-bottom:8px; font-size:12px;">Criterio: 4 = cumplimiento perfecto; &lt; 4 (1, 2 o 3) = cumplimiento parcial / punto de mejora.</p>
             <div id="commonIssuesBox">Sin datos cargados.</div>
         </div>
 
@@ -134,6 +139,30 @@
         window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
     }
 
+    const PISTA_RUBRIC_ITEMS = [
+        'Imagen y Presentación Personal',
+        'Protocolo de Servicio al Cliente',
+        'Promoción e Interacción Puma Pris',
+        'Revisión de Fluidos e Impulso de Lubricantes',
+        'Conocimientos Generales de Puma Flota',
+        'Conocimientos Generales de Seguridad y Control de Cisternas',
+        'Conocimiento General de lubricantes',
+        'Evaluación Puma Teams',
+        'Área de Trabajo'
+    ];
+
+    const TIENDA_RUBRIC_ITEMS = [
+        'Uniforme Completo y Presentación',
+        'Bienvenida y Actitud de Servicio',
+        'Promoción Puma Pris y Promociones Tienda',
+        'Venta Cruzada y Sugerencia',
+        'Toma de Pedido y Facturación',
+        'Acumulación de Puntos y Soporte App',
+        'Trato Personalizado',
+        'Entrega de Pedido',
+        'Despedida y Agradecimiento'
+    ];
+
     let cachedDbReports = [];
 
     window.onload = () => {
@@ -163,10 +192,8 @@
         box.textContent = text;
     }
 
-    // Normaliza nombres quitando tildes, puntuación extra, mayúsculas y espacios múltiples
-    function normalizePersonKey(name) {
-        if (!name || !name.trim()) return 'sin asignar';
-        return name
+    function normalizeText(str) {
+        return (str || '')
             .normalize('NFD')
             .replace(/[\u0300-\u036f]/g, '')
             .toLowerCase()
@@ -175,7 +202,6 @@
             .trim();
     }
 
-    // Distancia de edición (Levenshtein) para detectar pequeños errores de dedo
     function levenshteinDistance(a, b) {
         const m = a.length;
         const n = b.length;
@@ -242,10 +268,59 @@
                 name: m[3].replace(/\s+/g, ' ').trim(),
                 points: m[4].replace(/\s+/g, '').trim(),
                 adjusted_pct: m[5].replace(/\s+/g, '').trim(),
-                level: m[6].replace(/\s+/g, ' ').trim()
+                level: m[6].replace(/\s+/g, ' ').trim(),
+                rubric: []
             });
         }
         return staffList;
+    }
+
+    function parseRubricDetails(text, staffList) {
+        const rubricSectionMatch = text.match(/DETALLE DE CALIFICACIONES DE R[ÚU]BRICA[\s\S]*?(?=Escala:|OBSERVACIONES,\s*COMPROMISOS|$)/i);
+        if (!rubricSectionMatch) return staffList;
+
+        const rubricBlock = rubricSectionMatch[0].replace(/\s+/g, ' ').trim();
+        const collabRegex = /Colaborador\s*#\s*(\d+)\s*:\s*([A-ZÁÉÍÓÚÑa-zA-Záéíóúñ\s]+?)\s*\(([^)]+)\)\s*([\s\S]*?)(?=Colaborador\s*#\s*\d+\s*:|$)/gi;
+
+        const blocksByNum = {};
+        let cm;
+        while ((cm = collabRegex.exec(rubricBlock)) !== null) {
+            blocksByNum[Number(cm[1])] = {
+                name: cm[2].trim(),
+                roleHint: cm[3].trim(),
+                body: cm[4].trim()
+            };
+        }
+
+        return staffList.map((person, idx) => {
+            const matchedBlock = blocksByNum[person.num] || blocksByNum[idx + 1];
+            if (!matchedBlock) return person;
+
+            const isTienda = /tienda/i.test(person.role) || /tienda/i.test(matchedBlock.roleHint);
+            const expectedItems = isTienda ? TIENDA_RUBRIC_ITEMS : PISTA_RUBRIC_ITEMS;
+            const normBody = normalizeText(matchedBlock.body);
+
+            const rubric = expectedItems.map(item => {
+                const normItem = normalizeText(item);
+                const pos = normBody.indexOf(normItem);
+                let score = null;
+
+                if (pos !== -1) {
+                    const windowAfter = normBody.slice(pos + normItem.length, pos + normItem.length + 35);
+                    const naMatch = windowAfter.match(/\bn\s*a\b/);
+                    const numMatch = windowAfter.match(/\b([1-4])\b/);
+                    if (naMatch && (!numMatch || naMatch.index < numMatch.index)) {
+                        score = 'N/A';
+                    } else if (numMatch) {
+                        score = Number(numMatch[1]);
+                    }
+                }
+
+                return { criterion: item, score };
+            });
+
+            return { ...person, rubric };
+        });
     }
 
     function parseObservationsAndSafety(text) {
@@ -263,27 +338,11 @@
         const isEmptyNote = (val) => !val || /^(sin observaciones registradas\.?|n\/a|ninguna\.?)$/i.test(val.trim());
         const has_safety_risk = !isEmptyNote(safety_observations);
 
-        const individual_findings = [];
-        const staffObsSectionMatch = obsBlock.match(/Observaciones y Compromisos del Coach\s*(.+?)(?=OBSERVACIONES GENERALES DE LA ESTACI[ÓO]N|$)/i);
-        if (staffObsSectionMatch) {
-            const rawStaffObs = staffObsSectionMatch[1];
-            const findingRegex = /([A-ZÁÉÍÓÚÑ][a-zA-ZáéíóúñÁÉÍÓÚÑ\s]+?\((?:Agente[^)]+|[^)]+)\))\s*\|?\s*([^|]+?)(?=\s+[A-ZÁÉÍÓÚÑ][a-zA-ZáéíóúñÁÉÍÓÚÑ\s]+?\(|$)/g;
-            let fm;
-            while ((fm = findingRegex.exec(rawStaffObs)) !== null) {
-                const person = fm[1].trim();
-                const comment = fm[2].trim();
-                if (!isEmptyNote(comment)) {
-                    individual_findings.push({ person, comment });
-                }
-            }
-        }
-
         return {
             general_observations: isEmptyNote(general_observations) ? null : general_observations,
             maintenance_observations: isEmptyNote(maintenance_observations) ? null : maintenance_observations,
             safety_observations: isEmptyNote(safety_observations) ? null : safety_observations,
-            has_safety_risk,
-            individual_findings
+            has_safety_risk
         };
     }
 
@@ -306,7 +365,8 @@
         const global_level = globalLevelMatch ? globalLevelMatch[1].trim() : null;
         const overall_score = globalPctMatch ? Number(globalPctMatch[1].replace(',', '.')) : null;
 
-        const staff = parseStaffSection(text);
+        const baseStaff = parseStaffSection(text);
+        const staff = parseRubricDetails(text, baseStaff);
         const obsData = parseObservationsAndSafety(text);
 
         return {
@@ -337,14 +397,18 @@
             for (let i = 0; i < files.length; i++) {
                 const text = await extractPdfText(files[i]);
                 const parsed = parsePumaAuditText(files[i].name, text);
+                const rubricSummary = parsed.staff
+                    .map(s => `${s.name} (${s.role}): ${(s.rubric || []).filter(r => r.score !== null && r.score !== 'N/A').map(r => `${r.criterion.split(' ')[0]}..=${r.score}`).join(', ') || 'sin rúbrica'}`)
+                    .join('\n  ');
+
                 results.push(
                     `Archivo: ${parsed.source_file}\n` +
                     `Estación: ${parsed.station_name} | Fecha: ${parsed.audit_date}\n` +
                     `Coach: ${parsed.coach_name || 'N/A'} | Supervisor: ${parsed.supervisor_name || 'N/A'}\n` +
                     `Nivel Global: ${parsed.global_level || 'N/A'} (${parsed.overall_score ?? 'N/A'}%)\n` +
-                    `Colaboradores (${parsed.staff_count}): ${parsed.staff.map(s => `${s.name} [${s.role}: ${s.points} / ${s.adjusted_pct} - ${s.level}]`).join(' ; ') || 'Ninguno'}\n` +
-                    `Riesgo Seguridad: ${parsed.has_safety_risk ? 'SÍ -> ' + parsed.safety_observations : 'No'}\n` +
-                    `Hallazgos individuales: ${parsed.individual_findings.map(f => `${f.person}: ${f.comment}`).join(' | ') || 'Ninguno'}`
+                    `Colaboradores (${parsed.staff_count}): ${parsed.staff.map(s => `${s.name} [${s.role}: ${s.points} / ${s.adjusted_pct}]`).join(', ') || 'Ninguno'}\n` +
+                    `Rúbrica:\n  ${rubricSummary || 'Ninguna'}\n` +
+                    `Riesgo Seguridad: ${parsed.has_safety_risk ? 'SÍ -> ' + parsed.safety_observations : 'No'}`
                 );
             }
             showPreview(results.join('\n----------------------------------------\n'));
@@ -395,7 +459,6 @@
                         maintenance_observations: parsed.maintenance_observations,
                         safety_observations: parsed.safety_observations,
                         has_safety_risk: parsed.has_safety_risk,
-                        individual_findings: parsed.individual_findings,
                         raw_text: parsed.raw_text
                     })
                 };
@@ -502,10 +565,9 @@
         }
     }
 
-    // Agrupa capacitadores reconociendo tildes, mayúsculas/minúsculas y pequeños errores de dedo
     function resolveCanonicalCoach(rawName, coachClusters) {
         const displayName = formatDisplayName(rawName || 'Sin asignar');
-        const normKey = normalizePersonKey(rawName || 'sin asignar');
+        const normKey = normalizeText(rawName || 'sin asignar');
 
         if (normKey === 'sin asignar') {
             return { key: 'sin asignar', label: 'Sin asignar' };
@@ -528,6 +590,42 @@
         return newCluster;
     }
 
+    function buildRubricStats(templateItems) {
+        const map = {};
+        templateItems.forEach(item => {
+            map[normalizeText(item)] = {
+                criterion: item,
+                c1: 0,
+                c2: 0,
+                c3: 0,
+                c4: 0,
+                lt4: 0
+            };
+        });
+        return map;
+    }
+
+    function renderRubricGroupHtml(title, statsMap) {
+        const rows = Object.values(statsMap)
+            .filter(r => (r.c1 + r.c2 + r.c3 + r.c4) > 0)
+            .sort((a, b) => b.lt4 - a.lt4 || (b.c1 + b.c2) - (a.c1 + a.c2));
+
+        if (rows.length === 0) {
+            return `<h4>${title}</h4><div style="color:#666;">Sin calificaciones de rúbrica registradas en este período.</div>`;
+        }
+
+        return `<h4>${title}</h4>` + rows.map(r => {
+            const totalScored = r.c1 + r.c2 + r.c3 + r.c4;
+            return `<div class="issue-row">
+                <span class="issue-badge-lt4">&lt;4: ${r.lt4}</span>
+                <strong>${r.criterion}</strong>
+                <div class="issue-breakdown">
+                    Calificaciones: <strong>1</strong> = ${r.c1} | <strong>2</strong> = ${r.c2} | <strong>3</strong> = ${r.c3} | <strong>4</strong> = ${r.c4} (Total evaluadas: ${totalScored})
+                </div>
+            </div>`;
+        }).join('');
+    }
+
     function renderGeneralReport() {
         const selectedMonth = document.getElementById('monthFilter').value;
         const filtered = selectedMonth === 'ALL'
@@ -539,7 +637,8 @@
         let totalStaff = 0;
         const coachClusters = [];
         const visitsByCoach = {};
-        const issueCounts = {};
+        const pistaStats = buildRubricStats(PISTA_RUBRIC_ITEMS);
+        const tiendaStats = buildRubricStats(TIENDA_RUBRIC_ITEMS);
         const safetyRisks = [];
 
         filtered.forEach(r => {
@@ -550,20 +649,29 @@
             const staffArr = Array.isArray(p.staff) ? p.staff : [];
             totalStaff += staffArr.length > 0 ? staffArr.length : (Number(p.staff_count) || 0);
 
-            (p.individual_findings || []).forEach(f => {
-                const key = f.comment.trim();
-                if (key) issueCounts[key] = (issueCounts[key] || 0) + 1;
+            staffArr.forEach(person => {
+                const isTienda = /tienda/i.test(person.role || '');
+                const targetMap = isTienda ? tiendaStats : pistaStats;
+                const rubricArr = Array.isArray(person.rubric) ? person.rubric : [];
+
+                rubricArr.forEach(entry => {
+                    const key = normalizeText(entry.criterion);
+                    if (!targetMap[key]) {
+                        targetMap[key] = {
+                            criterion: entry.criterion,
+                            c1: 0,
+                            c2: 0,
+                            c3: 0,
+                            c4: 0,
+                            lt4: 0
+                        };
+                    }
+                    if (entry.score === 1) { targetMap[key].c1++; targetMap[key].lt4++; }
+                    else if (entry.score === 2) { targetMap[key].c2++; targetMap[key].lt4++; }
+                    else if (entry.score === 3) { targetMap[key].c3++; targetMap[key].lt4++; }
+                    else if (entry.score === 4) { targetMap[key].c4++; }
+                });
             });
-
-            if (p.general_observations) {
-                const key = `General: ${p.general_observations.trim()}`;
-                issueCounts[key] = (issueCounts[key] || 0) + 1;
-            }
-
-            if (p.maintenance_observations) {
-                const key = `Mantenimiento: ${p.maintenance_observations.trim()}`;
-                issueCounts[key] = (issueCounts[key] || 0) + 1;
-            }
 
             if (p.has_safety_risk && p.safety_observations) {
                 safetyRisks.push({
@@ -589,10 +697,9 @@
             ? 'No hay visitas registradas en el período seleccionado.'
             : coachEntries.map(item => `<div>• <strong>${item.label}:</strong> ${item.count} visita(s)</div>`).join('');
 
-        const issueEntries = Object.entries(issueCounts).sort((a, b) => b[1] - a[1]);
-        document.getElementById('commonIssuesBox').innerHTML = issueEntries.length === 0
-            ? '<span class="clean-note">No se detectaron fallas u observaciones registradas en el período.</span>'
-            : issueEntries.map(([issue, count]) => `<div>• <strong>(${count})</strong> ${issue}</div>`).join('');
+        document.getElementById('commonIssuesBox').innerHTML =
+            renderRubricGroupHtml('Agente de Pista (9 preguntas)', pistaStats) +
+            renderRubricGroupHtml('Agente de Tienda (9 preguntas)', tiendaStats);
 
         document.getElementById('safetyRisksBox').innerHTML = safetyRisks.length === 0
             ? '<span class="clean-note">Ninguna estación reporta riesgos de seguridad en el período seleccionado.</span>'

@@ -857,37 +857,37 @@
         const doc = new jsPDF({ unit: 'pt', format: 'a4' });
         const pageWidth = doc.internal.pageSize.getWidth();
         const pageHeight = doc.internal.pageSize.getHeight();
-        const margin = 40;
-        const maxWidth = pageWidth - margin * 2;
-        let y = 45;
+        const margin = 36;
+        const contentWidth = pageWidth - margin * 2;
+        let y = 42;
 
         const ensureSpace = (needed = 24) => {
-            if (y + needed > pageHeight - 40) {
+            if (y + needed > pageHeight - 36) {
                 doc.addPage();
-                y = 45;
+                y = 42;
             }
         };
 
         const addSectionTitle = (title) => {
-            ensureSpace(32);
-            y += 10;
+            ensureSpace(30);
+            y += 8;
             doc.setFont('helvetica', 'bold');
             doc.setFontSize(12);
             doc.setTextColor(0, 83, 159);
             doc.text(title, margin, y);
-            y += 6;
+            y += 5;
             doc.setDrawColor(220, 224, 228);
             doc.line(margin, y, pageWidth - margin, y);
             y += 14;
             doc.setTextColor(34, 34, 34);
         };
 
-        // Encabezado principal
+        // Título principal
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(16);
         doc.setTextColor(0, 83, 159);
-        doc.text('Generador de Informes de capacitación', margin, y);
-        y += 18;
+        doc.text('Informe De Capacitación', margin, y);
+        y += 17;
 
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(10);
@@ -896,85 +896,142 @@
             ? 'Todos los meses'
             : `Mes: ${currentGeneralSummary.selectedMonth}`;
         doc.text(`${periodLabel}  |  Generado: ${new Date().toISOString().slice(0, 10)}`, margin, y);
-        y += 18;
+        y += 17;
 
         // KPIs
         doc.setFont('helvetica', 'bold');
-        doc.setFontSize(11);
+        doc.setFontSize(10.5);
         doc.setTextColor(34, 34, 34);
         doc.text(
             `Visitas: ${currentGeneralSummary.visitsCount}   |   Colaboradores Evaluados/Capacitados: ${currentGeneralSummary.totalStaff}   |   Estaciones con Riesgo de Seguridad: ${currentGeneralSummary.safetyRisksCount}`,
             margin,
             y
         );
-        y += 16;
+        y += 15;
 
         // 1) Visitas por capacitador
         addSectionTitle('1) Visitas en el mes por capacitador');
         doc.setFont('helvetica', 'normal');
-        doc.setFontSize(10.5);
+        doc.setFontSize(10);
         if (currentGeneralSummary.coachEntries.length === 0) {
             doc.text('No hay visitas registradas en el período seleccionado.', margin, y);
-            y += 16;
+            y += 15;
         } else {
             currentGeneralSummary.coachEntries.forEach(item => {
-                ensureSpace(18);
-                doc.text(`• ${item.label}: ${item.count} visita(s)`, margin + 6, y);
-                y += 15;
+                ensureSpace(16);
+                doc.text(`• ${item.label}: ${item.count} visita(s)`, margin + 4, y);
+                y += 14;
             });
         }
 
-        // 2) Fallas más comunes
+        // 2) Fallas más comunes en 2 columnas (Agente de Pista | Agente de Tienda)
         addSectionTitle('2) Fallas más comunes (F = Fallas [1, 2, 3] | C = Cumplimiento [4])');
-        const renderPdfRubricList = (subTitle, rows) => {
-            ensureSpace(22);
+        const colGap = 18;
+        const twoColWidth = (contentWidth - colGap) / 2;
+
+        const drawTwoColHeader = (startY) => {
             doc.setFont('helvetica', 'bold');
-            doc.setFontSize(11);
+            doc.setFontSize(10.5);
             doc.setTextColor(0, 83, 159);
-            doc.text(subTitle, margin + 4, y);
-            y += 15;
-
-            if (rows.length === 0) {
-                doc.setFont('helvetica', 'normal');
-                doc.setFontSize(10);
-                doc.setTextColor(100, 100, 100);
-                doc.text('Sin calificaciones registradas.', margin + 10, y);
-                y += 15;
-                return;
-            }
-
-            rows.forEach(r => {
-                ensureSpace(30);
-                const totalScored = r.c1 + r.c2 + r.c3 + r.c4;
-                let x = margin + 8;
-
-                doc.setFont('helvetica', 'bold');
-                doc.setFontSize(10);
-                doc.setTextColor(198, 40, 40);
-                const fText = `F: ${r.lt4}`;
-                doc.text(fText, x, y);
-                x += doc.getTextWidth(fText) + 10;
-
-                doc.setTextColor(30, 126, 52);
-                const cText = `C: ${r.c4}`;
-                doc.text(cText, x, y);
-                x += doc.getTextWidth(cText) + 10;
-
-                doc.setTextColor(34, 34, 34);
-                const critLines = doc.splitTextToSize(r.criterion, pageWidth - x - margin);
-                doc.text(critLines, x, y);
-                y += critLines.length * 13;
-
-                doc.setFont('helvetica', 'normal');
-                doc.setFontSize(9);
-                doc.setTextColor(90, 90, 90);
-                doc.text(`1 = ${r.c1}  |  2 = ${r.c2}  |  3 = ${r.c3}  |  4 = ${r.c4}  (Total evaluadas: ${totalScored})`, margin + 14, y);
-                y += 15;
-            });
+            doc.text('Agente de Pista', margin, startY);
+            doc.text('Agente de Tienda', margin + twoColWidth + colGap, startY);
+            return startY + 14;
         };
 
-        renderPdfRubricList('Agente de Pista', currentGeneralSummary.pistaRows);
-        renderPdfRubricList('Agente de Tienda', currentGeneralSummary.tiendaRows);
+        ensureSpace(34);
+        y = drawTwoColHeader(y);
+
+        const renderRubricItemInColumn = (r, colX, colW, curY) => {
+            const totalScored = r.c1 + r.c2 + r.c3 + r.c4;
+            const critLines = doc.splitTextToSize(r.criterion, colW - 6);
+            const breakdownText = `1:${r.c1} | 2:${r.c2} | 3:${r.c3} | 4:${r.c4} (Tot:${totalScored})`;
+            const blockHeight = 13 + critLines.length * 11.5 + 12 + 8;
+
+            return {
+                height: blockHeight,
+                draw: (baseY) => {
+                    let x = colX;
+                    doc.setFont('helvetica', 'bold');
+                    doc.setFontSize(9.5);
+                    doc.setTextColor(198, 40, 40);
+                    const fStr = `F: ${r.lt4}`;
+                    doc.text(fStr, x, baseY);
+                    x += doc.getTextWidth(fStr) + 8;
+
+                    doc.setTextColor(30, 126, 52);
+                    const cStr = `C: ${r.c4}`;
+                    doc.text(cStr, x, baseY);
+
+                    let lineY = baseY + 12;
+                    doc.setFont('helvetica', 'bold');
+                    doc.setFontSize(9.5);
+                    doc.setTextColor(34, 34, 34);
+                    doc.text(critLines, colX, lineY);
+                    lineY += critLines.length * 11.5;
+
+                    doc.setFont('helvetica', 'normal');
+                    doc.setFontSize(8.5);
+                    doc.setTextColor(90, 90, 90);
+                    doc.text(breakdownText, colX, lineY);
+                }
+            };
+        };
+
+        const pistaItems = currentGeneralSummary.pistaRows.length > 0
+            ? currentGeneralSummary.pistaRows
+            : [{ criterion: 'Sin calificaciones registradas.', c1: 0, c2: 0, c3: 0, c4: 0, lt4: 0 }];
+        const tiendaItems = currentGeneralSummary.tiendaRows.length > 0
+            ? currentGeneralSummary.tiendaRows
+            : [{ criterion: 'Sin calificaciones registradas.', c1: 0, c2: 0, c3: 0, c4: 0, lt4: 0 }];
+
+        let pIdx = 0;
+        let tIdx = 0;
+
+        while (pIdx < pistaItems.length || tIdx < tiendaItems.length) {
+            if (y > pageHeight - 60) {
+                doc.addPage();
+                y = 42;
+                y = drawTwoColHeader(y);
+            }
+
+            let rowConsumed = 0;
+
+            if (pIdx < pistaItems.length) {
+                const itemObj = renderRubricItemInColumn(pistaItems[pIdx], margin, twoColWidth, y);
+                if (y + itemObj.height <= pageHeight - 36 || tIdx >= tiendaItems.length) {
+                    if (y + itemObj.height > pageHeight - 36) {
+                        doc.addPage();
+                        y = 42;
+                        y = drawTwoColHeader(y);
+                    }
+                    itemObj.draw(y);
+                    rowConsumed = Math.max(rowConsumed, itemObj.height);
+                    pIdx++;
+                }
+            }
+
+            if (tIdx < tiendaItems.length) {
+                const itemObj = renderRubricItemInColumn(tiendaItems[tIdx], margin + twoColWidth + colGap, twoColWidth, y);
+                if (y + itemObj.height <= pageHeight - 36 || pIdx >= pistaItems.length) {
+                    if (y + itemObj.height > pageHeight - 36) {
+                        doc.addPage();
+                        y = 42;
+                        y = drawTwoColHeader(y);
+                    }
+                    itemObj.draw(y);
+                    rowConsumed = Math.max(rowConsumed, itemObj.height);
+                    tIdx++;
+                }
+            }
+
+            if (rowConsumed === 0) {
+                doc.addPage();
+                y = 42;
+                y = drawTwoColHeader(y);
+            } else {
+                y += rowConsumed;
+            }
+        }
 
         // 3) Riesgos de seguridad
         addSectionTitle('3) Estaciones con riesgos de seguridad y descripción del riesgo');
@@ -982,69 +1039,92 @@
         doc.setFontSize(10);
         if (currentGeneralSummary.safetyRisks.length === 0) {
             doc.setTextColor(30, 126, 52);
-            doc.text('Ninguna estación reporta riesgos de seguridad en el período seleccionado.', margin + 6, y);
+            doc.text('Ninguna estación reporta riesgos de seguridad en el período seleccionado.', margin + 4, y);
             y += 16;
         } else {
             currentGeneralSummary.safetyRisks.forEach(sr => {
                 const header = `• ${sr.station} (${sr.date} — Capacitador: ${sr.coach})`;
-                const descLines = doc.splitTextToSize(`Descripción: ${sr.description}`, maxWidth - 14);
-                ensureSpace(16 + descLines.length * 13 + 8);
+                const descLines = doc.splitTextToSize(`Descripción: ${sr.description}`, contentWidth - 12);
+                ensureSpace(16 + descLines.length * 12.5 + 8);
 
                 doc.setFont('helvetica', 'bold');
                 doc.setTextColor(198, 40, 40);
-                doc.text(header, margin + 6, y);
-                y += 14;
-
-                doc.setFont('helvetica', 'normal');
-                doc.setTextColor(34, 34, 34);
-                doc.text(descLines, margin + 14, y);
-                y += descLines.length * 13 + 8;
-            });
-        }
-
-        // 4) Ranking de estaciones
-        addSectionTitle('4) Ranking de estaciones (90–100% verde | 80–89% amarillo | <=79% rojo)');
-        doc.setFontSize(10);
-        if (currentGeneralSummary.stationRanking.length === 0) {
-            doc.setFont('helvetica', 'normal');
-            doc.setTextColor(100, 100, 100);
-            doc.text('No hay estaciones registradas en el período seleccionado.', margin + 6, y);
-            y += 16;
-        } else {
-            currentGeneralSummary.stationRanking.forEach((st, idx) => {
-                const pctText = st.avgScore !== null ? `${st.avgScore}%` : 'N/A';
-                const modeLabel = st.visitCount > 1 ? `Promedio de ${st.visitCount} visitas` : '1 visita';
-                const visitsDetail = st.visits
-                    .map(v => `${v.date}: ${v.score !== null ? v.score + '%' : 'N/A'}`)
-                    .join(' | ');
-                const detailLines = doc.splitTextToSize(`${modeLabel} (${visitsDetail})`, maxWidth - 20);
-
-                ensureSpace(16 + detailLines.length * 12 + 8);
-
-                const [rCol, gCol, bCol] = getScoreRgb(st.avgScore);
-                doc.setFont('helvetica', 'bold');
-                doc.setTextColor(34, 34, 34);
-                const prefix = `#${idx + 1}  ${st.station} — `;
-                doc.text(prefix, margin + 6, y);
-                const prefixWidth = doc.getTextWidth(prefix);
-
-                doc.setTextColor(rCol, gCol, bCol);
-                doc.text(pctText, margin + 6 + prefixWidth, y);
+                doc.text(header, margin + 4, y);
                 y += 13;
 
                 doc.setFont('helvetica', 'normal');
-                doc.setFontSize(9);
-                doc.setTextColor(90, 90, 90);
-                doc.text(detailLines, margin + 16, y);
-                doc.setFontSize(10);
-                y += detailLines.length * 12 + 7;
+                doc.setTextColor(34, 34, 34);
+                doc.text(descLines, margin + 12, y);
+                y += descLines.length * 12.5 + 7;
             });
+        }
+
+        // 4) Ranking De Estaciones en 3 columnas
+        addSectionTitle('4) Ranking De Estaciones');
+        if (currentGeneralSummary.stationRanking.length === 0) {
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(10);
+            doc.setTextColor(100, 100, 100);
+            doc.text('No hay estaciones registradas en el período seleccionado.', margin + 4, y);
+            y += 16;
+        } else {
+            const threeColGap = 12;
+            const threeColWidth = (contentWidth - threeColGap * 2) / 3;
+            const rowsCount = Math.ceil(currentGeneralSummary.stationRanking.length / 3);
+
+            for (let r = 0; r < rowsCount; r++) {
+                const rowItems = [0, 1, 2]
+                    .map(c => ({ col: c, item: currentGeneralSummary.stationRanking[r * 3 + c] }))
+                    .filter(x => Boolean(x.item));
+
+                const prepared = rowItems.map(({ col, item }) => {
+                    const pctText = item.avgScore !== null ? `${item.avgScore}%` : 'N/A';
+                    const titleStr = `#${r * 3 + col + 1} ${item.station}`;
+                    const titleLines = doc.splitTextToSize(titleStr, threeColWidth - 6);
+                    const modeLabel = item.visitCount > 1 ? `Prom. ${item.visitCount} visitas` : '1 visita';
+                    const visitsDetail = item.visits
+                        .map(v => `${v.date}: ${v.score !== null ? v.score + '%' : 'N/A'}`)
+                        .join(' | ');
+                    const metaLines = doc.splitTextToSize(`${modeLabel} (${visitsDetail})`, threeColWidth - 6);
+                    const boxHeight = titleLines.length * 11.5 + 13 + metaLines.length * 10.5 + 10;
+
+                    return { col, item, pctText, titleLines, metaLines, boxHeight };
+                });
+
+                const maxBoxH = Math.max(...prepared.map(p => p.boxHeight));
+                ensureSpace(maxBoxH + 4);
+
+                prepared.forEach(p => {
+                    const colX = margin + p.col * (threeColWidth + threeColGap);
+                    let itemY = y;
+
+                    doc.setFont('helvetica', 'bold');
+                    doc.setFontSize(9.5);
+                    doc.setTextColor(34, 34, 34);
+                    doc.text(p.titleLines, colX, itemY);
+                    itemY += p.titleLines.length * 11.5;
+
+                    const [rCol, gCol, bCol] = getScoreRgb(p.item.avgScore);
+                    doc.setFont('helvetica', 'bold');
+                    doc.setFontSize(10);
+                    doc.setTextColor(rCol, gCol, bCol);
+                    doc.text(p.pctText, colX, itemY);
+                    itemY += 12.5;
+
+                    doc.setFont('helvetica', 'normal');
+                    doc.setFontSize(8.2);
+                    doc.setTextColor(90, 90, 90);
+                    doc.text(p.metaLines, colX, itemY);
+                });
+
+                y += maxBoxH + 4;
+            }
         }
 
         const fileSuffix = currentGeneralSummary.selectedMonth === 'ALL'
             ? 'Todos'
             : currentGeneralSummary.selectedMonth;
-        doc.save(`Informe_Capacitacion_${fileSuffix}.pdf`);
+        doc.save(`Informe_De_Capacitacion_${fileSuffix}.pdf`);
         setStatus('Reporte PDF generado y descargado correctamente.', 'green');
     }
 

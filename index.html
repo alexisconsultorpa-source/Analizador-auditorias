@@ -893,9 +893,19 @@
             }
         };
 
-        const addSectionTitle = (title) => {
-            ensureSpace(30);
-            y += 8;
+        const startOnPageNumber = (targetPage) => {
+            while (doc.getNumberOfPages() < targetPage) {
+                doc.addPage();
+            }
+            doc.setPage(targetPage);
+            y = 42;
+        };
+
+        const addSectionTitle = (title, skipTopSpace = false) => {
+            if (!skipTopSpace) {
+                ensureSpace(30);
+                y += 8;
+            }
             doc.setFont('helvetica', 'bold');
             doc.setFontSize(12);
             doc.setTextColor(0, 83, 159);
@@ -907,6 +917,7 @@
             doc.setTextColor(34, 34, 34);
         };
 
+        // PÁGINA 1: Encabezado, KPIs, Visitas por capacitador y Fallas más comunes
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(16);
         doc.setTextColor(0, 83, 159);
@@ -1055,7 +1066,9 @@
             }
         }
 
-        addSectionTitle('3) Estaciones con riesgos de seguridad y descripción del riesgo');
+        // PÁGINA 2: Estaciones con riesgos de seguridad y descripción del riesgo
+        startOnPageNumber(2);
+        addSectionTitle('3) Estaciones con riesgos de seguridad y descripción del riesgo', true);
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(10);
         if (currentGeneralSummary.safetyRisks.length === 0) {
@@ -1080,7 +1093,9 @@
             });
         }
 
-        addSectionTitle('4) Ranking De Estaciones');
+        // PÁGINA 3 EN ADELANTE: Ranking De Estaciones en 3 columnas
+        startOnPageNumber(3);
+        addSectionTitle('4) Ranking De Estaciones', true);
         if (currentGeneralSummary.stationRanking.length === 0) {
             doc.setFont('helvetica', 'normal');
             doc.setFontSize(10);

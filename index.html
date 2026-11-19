@@ -3,77 +3,373 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Analizador de Auditorías Puma Energy</title>
-    <!-- Incluimos el cliente de Supabase desde CDN oficial -->
+    <title>Central de Inteligencia de Auditorías - Puma Energy</title>
+    <!-- Supabase Client -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <!-- PDF.js para extracción de texto real de múltiples PDFs -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <!-- docx.js para generación nativa de documentos Word (.docx) -->
+    <script src="https://unpkg.com/docx@8.5.0/build/index.umd.js"></script>
     <style>
-        body { font-family: sans-serif; background-color: #f4f6f9; margin: 0; padding: 20px; }
-        .container { max-width: 800px; margin: 40px auto; background: #fff; padding: 30px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
-        h1 { color: #00539F; margin-bottom: 8px; }
-        p { color: #555; margin-bottom: 24px; }
-        .dropzone { border: 2px dashed #00539F; border-radius: 12px; padding: 30px; text-align: center; background: #f9f9f9; }
-        input[type="file"] { margin-bottom: 16px; display: block; margin: 0 auto 16px auto; }
-        .btn-group { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
-        button { border: none; padding: 10px 20px; border-radius: 6px; font-size: 15px; cursor: pointer; color: #fff; }
-        .btn-analyze { background: #00539F; }
-        .btn-save { background: #28a745; }
-        button:disabled { background: #ccc; cursor: not-allowed; }
-        #output { margin-top: 24px; background: #fff; padding: 15px; border-radius: 8px; border: 1px solid #ddd; white-space: pre-wrap; font-family: monospace; font-size: 13px; display: none; }
-        #message { margin-top: 20px; font-weight: bold; color: #333; text-align: center; }
+        :root { --primary: #00539F; --secondary: #E31837; --bg: #f4f6f9; --card: #ffffff; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background-color: var(--bg); margin: 0; padding: 15px; color: #222; }
+        .container { max-width: 900px; margin: 20px auto; background: var(--card); padding: 25px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.06); }
+        h1 { color: var(--primary); margin: 0 0 6px 0; font-size: 22px; }
+        h2 { color: var(--primary); font-size: 17px; margin-top: 25px; border-bottom: 2px solid #eee; padding-bottom: 6px; }
+        p.subtitle { color: #555; margin: 0 0 20px 0; font-size: 14px; }
+        .config-bar { background: #eef4fa; padding: 12px; border-radius: 8px; margin-bottom: 20px; display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+        .config-bar input { flex: 1; min-width: 200px; padding: 8px; border: 1px solid #ccc; border-radius: 6px; font-size: 13px; }
+        .dropzone { border: 2px dashed var(--primary); border-radius: 10px; padding: 20px; text-align: center; background: #fafbfd; }
+        input[type="file"] { margin: 0 auto 15px auto; display: block; max-width: 100%; }
+        .btn-group { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+        button { border: none; padding: 10px 18px; border-radius: 6px; font-size: 14px; font-weight: 600; cursor: pointer; color: #fff; transition: opacity 0.2s; }
+        button:hover { opacity: 0.9; }
+        button:disabled { background: #bbb !important; cursor: not-allowed; }
+        .btn-blue { background: var(--primary); }
+        .btn-green { background: #1e7e34; }
+        .btn-red { background: var(--secondary); }
+        .btn-dark { background: #343a40; }
+        textarea { width: 100%; box-sizing: border-box; height: 110px; padding: 12px; border: 1px solid #ccc; border-radius: 8px; font-family: inherit; font-size: 14px; margin-bottom: 12px; resize: vertical; }
+        .progress-container { width: 100%; background: #e9ecef; border-radius: 6px; height: 10px; margin-top: 15px; display: none; overflow: hidden; }
+        .progress-bar { height: 100%; background: var(--primary); width: 0%; transition: width 0.3s; }
+        #statusMsg { margin-top: 12px; font-size: 13px; font-weight: 600; text-align: center; }
+        #resultBox { margin-top: 20px; background: #f8f9fa; padding: 18px; border-radius: 8px; border: 1px solid #dee2e6; white-space: pre-wrap; font-size: 14px; line-height: 1.5; display: none; }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <h1>Analizador de Auditorías Puma Energy</h1>
-    <p>Sube el reporte en PDF de la estación para analizarlo al instante o guardarlo en Supabase según lo requieras.</p>
+    <h1>Analizador Inteligente de Auditorías</h1>
+    <p class="subtitle">Procesamiento masivo (hasta 100 PDFs), análisis histórico relacional y exportación a Word.</p>
 
-    <div class="dropzone">
-        <input type="file" id="pdfFile" accept=".pdf">
-        <div class="btn-group">
-            <button id="analyzeBtn" class="btn-analyze" onclick="handleAction('analyze')">🔍 Analizar Rápido (Solo Vista)</button>
-            <button id="saveBtn" class="btn-save" onclick="handleAction('save')">💾 Guardar en Base de Datos</button>
-        </div>
+    <!-- Configuración de API Key local (No se sube a GitHub) -->
+    <div class="config-bar">
+        <input type="password" id="geminiKey" placeholder="Pega aquí tu Gemini API Key (se guarda en tu dispositivo)">
+        <button class="btn-dark" onclick="saveApiKey()">Guardar Llave</button>
     </div>
 
-    <p id="message"></p>
-    <div id="output"></div>
+    <!-- Sección 1: Carga Masiva o Individual -->
+    <h2>1. Carga de Informes PDF (Individual o Lote de hasta 100 archivos)</h2>
+    <div class="dropzone">
+        <input type="file" id="pdfFiles" accept=".pdf" multiple>
+        <div class="btn-group">
+            <button id="btnAnalyzeOnly" class="btn-blue" onclick="processBatch(false)">🔍 Analizar Rápido (Sin Guardar)</button>
+            <button id="btnSaveBatch" class="btn-green" onclick="processBatch(true)">💾 Procesar y Guardar Lote en BD</button>
+        </div>
+        <div class="progress-container" id="progressContainer">
+            <div class="progress-bar" id="progressBar"></div>
+        </div>
+        <div id="statusMsg"></div>
+    </div>
+
+    <!-- Sección 2: Motor de Consulta Relacional y Patrones -->
+    <h2>2. Consulta Específica, Relaciones y Detección de Patrones</h2>
+    <p class="subtitle">Pide cruces por fechas, comparativas entre estaciones, hallazgos repetidos o evaluaciones de personal.</p>
+    <textarea id="customPrompt" placeholder="Ejemplo: Analiza los informes guardados entre octubre y noviembre. Identifica qué hallazgos de seguridad e higiene se repiten en más de 2 estaciones, compara los puntajes de Pista vs Tienda y lista al personal con calificaciones más bajas."></textarea>
+    
+    <div class="btn-group">
+        <button id="btnQuery" class="btn-blue" onclick="runRelationalAnalysis()">📊 Ejecutar Análisis Relacional</button>
+        <button id="btnExportWord" class="btn-red" onclick="exportToWord()" disabled>📄 Descargar Informe en Word (.docx)</button>
+    </div>
+
+    <!-- Resultados -->
+    <div id="resultBox"></div>
 </div>
 
 <script>
-    // Inicializamos Supabase con tus credenciales
+    // Configuración PDF.js
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+    // Configuración Supabase
     const SUPABASE_URL = 'https://nwsyjlrsfqgtvxaonlxv.supabase.co';
     const SUPABASE_ANON_KEY = 'sb_publishable__xgxSWRabBBNgVDTXaP91w_shWHV9ur';
     const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-    function handleAction(actionType) {
-        const fileInput = document.getElementById('pdfFile');
-        const message = document.getElementById('message');
-        const output = document.getElementById('output');
+    let lastExtractedTextBatch = []; // Memoria temporal para análisis rápido sin guardar
+    let lastGeneratedReport = "";    // Memoria para exportar a Word
 
-        if (fileInput.files.length === 0) {
-            message.textContent = 'Por favor selecciona un archivo PDF primero.';
-            message.style.color = 'red';
-            output.style.display = 'none';
-            return;
+    // Cargar API Key guardada en el navegador
+    window.onload = () => {
+        const savedKey = localStorage.getItem('gemini_api_key');
+        if (savedKey) document.getElementById('geminiKey').value = savedKey;
+    };
+
+    function saveApiKey() {
+        const key = document.getElementById('geminiKey').value.trim();
+        if (!key) return alert('Ingresa una API Key válida.');
+        localStorage.setItem('gemini_api_key', key);
+        setStatus('Llave API guardada localmente en este dispositivo.', 'green');
+    }
+
+    function setStatus(msg, color = '#00539F') {
+        const el = document.getElementById('statusMsg');
+        el.textContent = msg;
+        el.style.color = color;
+    }
+
+    // Extraer texto puro de un archivo PDF usando PDF.js
+    async function extractTextFromPDF(file) {
+        const arrayBuffer = await file.arrayBuffer();
+        const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+        let fullText = '';
+        for (let i = 1; i <= pdf.numPages; i++) {
+            const page = await pdf.getPage(i);
+            const textContent = await page.getTextContent();
+            const pageText = textContent.items.map(item => item.str).join(' ');
+            fullText += `\n--- PÁGINA ${i} ---\n` + pageText;
         }
+        return fullText;
+    }
 
-        const file = fileInput.files[0];
+    // Llamada estructurada a Gemini (Cero alucinaciones)
+    async function callGemini(promptText, systemInstruction) {
+        const apiKey = localStorage.getItem('gemini_api_key');
+        if (!apiKey) throw new Error('Falta configurar tu Gemini API Key arriba.');
 
-        if (actionType === 'analyze') {
-            message.textContent = 'Analizando PDF rápidamente (sin guardar)...';
-            message.style.color = '#00539F';
-            output.style.display = 'block';
-            output.textContent = 'Simulación de extracción:\n- Estación: Pendiente de lectura\n- Puntaje Pista / Tienda: OK\n- Hallazgos detectados sin alterar la base de datos.';
-        } else {
-            message.textContent = 'Guardando auditoría formalmente en Supabase...';
-            message.style.color = '#28a745';
-            output.style.display = 'none';
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                systemInstruction: { parts: [{ text: systemInstruction }] },
+                contents: [{ parts: [{ text: promptText }] }],
+                generationConfig: { temperature: 0.0 }
+            })
+        });
+
+        const data = await response.json();
+        if (data.error) throw new Error(data.error.message);
+        return data.candidates[0].content.parts[0].text;
+    }
+
+    // Procesamiento por lotes (hasta 100 PDFs)
+    async function processBatch(saveToDb) {
+        const files = document.getElementById('pdfFiles').files;
+        if (files.length === 0) return setStatus('Selecciona al menos un archivo PDF.', 'red');
+        if (files.length > 100) return setStatus('El máximo recomendado por lote es de 100 archivos.', 'red');
+
+        const progressContainer = document.getElementById('progressContainer');
+        const progressBar = document.getElementById('progressBar');
+        progressContainer.style.display = 'block';
+        progressBar.style.width = '0%';
+        lastExtractedTextBatch = [];
+
+        setButtonsDisabled(true);
+
+        const extractionRules = `Eres un extractor estricto de datos de auditorías de estaciones de servicio Puma Energy y tiendas Super7.
+Extrae ÚNICAMENTE los datos presentes en el texto. Si un dato no aparece, pon null. NO inventes ni deduzcas nada.
+Devuelve EXCLUSIVAMENTE un objeto JSON válido (sin comillas markdown \`\`\`json) con esta estructura exacta:
+{
+  "station_name": "Nombre de la estación",
+  "audit_date": "YYYY-MM-DD",
+  "coach_name": "Nombre del auditor/coach",
+  "overall_score": 0.0,
+  "pista_score": 0.0,
+  "tienda_score": 0.0,
+  "key_findings": ["hallazgo 1", "hallazgo 2"],
+  "evaluated_staff": [
+    {"name": "Nombre empleado", "role": "Pista o Tienda", "score": 0.0, "notes": "observación"}
+  ],
+  "rubric_scores": [
+    {"category": "Seguridad/Imagen/Servicio", "item": "Nombre del rubro", "score": 0.0}
+  ]
+}`;
+
+        let processedCount = 0;
+        let errorsCount = 0;
+
+        for (let i = 0; i < files.length; i++) {
+            const file = files[i];
+            setStatus(`Procesando archivo ${i + 1} de ${files.length}: ${file.name}...`);
             
-            setTimeout(() => {
-                message.textContent = '¡Reporte guardado con éxito en las 3 tablas de Supabase!';
-            }, 1500);
+            try {
+                const rawText = await extractTextFromPDF(file);
+                const jsonString = await callGemini(`Texto del PDF (${file.name}):\n${rawText}`, extractionRules);
+                const cleanJson = jsonString.replace(/```json/g, '').replace(/```/g, '').trim();
+                const parsedData = JSON.parse(cleanJson);
+
+                lastExtractedTextBatch.push(parsedData);
+
+                if (saveToDb) {
+                    // 1. Insertar reporte principal en audit_reports
+                    const { data: reportData, error: reportError } = await supabaseClient
+                        .from('audit_reports')
+                        .insert([{
+                            station_name: parsedData.station_name,
+                            audit_date: parsedData.audit_date,
+                            coach_name: parsedData.coach_name,
+                            overall_score: parsedData.overall_score,
+                            pista_score: parsedData.pista_score,
+                            tienda_score: parsedData.tienda_score,
+                            raw_summary: JSON.stringify(parsedData.key_findings)
+                        }])
+                        .select()
+                        .single();
+
+                    if (reportError) throw reportError;
+
+                    // 2. Insertar personal evaluado si existe
+                    if (parsedData.evaluated_staff && parsedData.evaluated_staff.length > 0) {
+                        const staffRows = parsedData.evaluated_staff.map(s => ({
+                            report_id: reportData.id,
+                            staff_name: s.name,
+                            area: s.role,
+                            score: s.score,
+                            comments: s.notes
+                        }));
+                        await supabaseClient.from('audit_evaluated_staff').insert(staffRows);
+                    }
+
+                    // 3. Insertar rubros si existen
+                    if (parsedData.rubric_scores && parsedData.rubric_scores.length > 0) {
+                        const rubricRows = parsedData.rubric_scores.map(r => ({
+                            report_id: reportData.id,
+                            category: r.category,
+                            rubric_name: r.item,
+                            score: r.score
+                        }));
+                        await supabaseClient.from('audit_rubric_scores').insert(rubricRows);
+                    }
+                }
+                processedCount++;
+            } catch (err) {
+                console.error(`Error en ${file.name}:`, err);
+                errorsCount++;
+            }
+
+            const percent = Math.round(((i + 1) / files.length) * 100);
+            progressBar.style.width = `${percent}%`;
         }
+
+        setButtonsDisabled(false);
+        const modeText = saveToDb ? 'guardados en Supabase' : 'analizados en memoria temporal';
+        setStatus(`Proceso finalizado: ${processedCount} informes ${modeText}. (${errorsCount} errores).`, errorsCount > 0 ? '#d9534f' : 'green');
+        
+        if (!saveToDb && lastExtractedTextBatch.length > 0) {
+            showResult(JSON.stringify(lastExtractedTextBatch, null, 2));
+        }
+    }
+
+    // Análisis relacional cruzando fechas y patrones (desde BD o memoria temporal)
+    async function runRelationalAnalysis() {
+        const userQuery = document.getElementById('customPrompt').value.trim();
+        if (!userQuery) return setStatus('Escribe qué datos o relaciones deseas analizar en el recuadro.', 'red');
+
+        setButtonsDisabled(true);
+        setStatus('Consultando base de datos histórica y cruzando patrones...', '#00539F');
+
+        try {
+            let contextData = [];
+
+            // Consultar registros históricos en Supabase ordenados por fecha
+            const { data: dbReports, error } = await supabaseClient
+                .from('audit_reports')
+                .select(`
+                    *,
+                    audit_evaluated_staff (*),
+                    audit_rubric_scores (*)
+                `)
+                .order('audit_date', { ascending: false })
+                .limit(200);
+
+            if (error) throw error;
+
+            if (dbReports && dbReports.length > 0) {
+                contextData = dbReports;
+            } else if (lastExtractedTextBatch.length > 0) {
+                contextData = lastExtractedTextBatch;
+            } else {
+                throw new Error('No hay datos en la base de datos ni informes cargados en esta sesión.');
+            }
+
+            const analystSystemPrompt = `Eres un Auditor Líder y Analista de Datos Operativos experto.
+Tu tarea es responder a la solicitud del usuario basándote ESTRICTAMENTE en los datos JSON proporcionados.
+REGLAS INQUEBRANTABLES:
+1. CERO ALUCINACIONES: Si un dato, fecha, estación o empleado no está en los registros, indícalo claramente. Nunca inventes cifras.
+2. ANÁLISIS TEMPORAL: Diferencia siempre las fechas de las auditorías (audit_date) para mostrar evolución, mejoras o deterioros en el tiempo.
+3. DETECCIÓN DE PATRONES: Identifica fallas repetidas, rubros con bajas calificaciones recurrentes y tendencias por estación o coach.
+4. FORMATO EJECUTIVO: Redacta con títulos claros, viñetas y conclusiones accionables listas para un informe gerencial.`;
+
+            const promptPayload = `SOLICITUD DEL USUARIO:\n${userQuery}\n\nDATOS HISTÓRICOS DE AUDITORÍAS (JSON):\n${JSON.stringify(contextData)}`;
+            
+            const analysisResult = await callGemini(promptPayload, analystSystemPrompt);
+            lastGeneratedReport = analysisResult;
+            
+            showResult(analysisResult);
+            document.getElementById('btnExportWord').disabled = false;
+            setStatus('Análisis relacional completado. Ya puedes descargarlo en Word.', 'green');
+
+        } catch (err) {
+            console.error(err);
+            setStatus(`Error en el análisis: ${err.message}`, 'red');
+        } finally {
+            setButtonsDisabled(false);
+        }
+    }
+
+    // Exportación nativa a Microsoft Word (.docx)
+    async function exportToWord() {
+        if (!lastGeneratedReport) return;
+
+        const { Document, Packer, Paragraph, TextRun, HeadingLevel } = docx;
+
+        const lines = lastGeneratedReport.split('\n');
+        const docChildren = [
+            new Paragraph({
+                text: "INFORME EJECUTIVO DE AUDITORÍAS OPERATIVAS",
+                heading: HeadingLevel.HEADING_1,
+            }),
+            new Paragraph({
+                children: [
+                    new TextRun({
+                        text: `Fecha de generación: ${new Date().toLocaleDateString('es-PA')}`,
+                        italics: true,
+                        color: "555555"
+                    })
+                ],
+                spacing: { after: 300 }
+            })
+        ];
+
+        lines.forEach(line => {
+            const cleanLine = line.replace(/\*\*/g, '').trim();
+            if (cleanLine.startsWith('#')) {
+                docChildren.push(new Paragraph({
+                    text: cleanLine.replace(/#/g, '').trim(),
+                    heading: HeadingLevel.HEADING_2,
+                    spacing: { before: 240, after: 120 }
+                }));
+            } else if (cleanLine.length > 0) {
+                docChildren.push(new Paragraph({
+                    children: [new TextRun(cleanLine)],
+                    spacing: { after: 120 }
+                }));
+            }
+        });
+
+        const doc = new Document({
+            sections: [{ properties: {}, children: docChildren }]
+        });
+
+        const blob = await Packer.toBlob(doc);
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `Analisis_Auditorias_${new Date().toISOString().slice(0,10)}.docx`;
+        a.click();
+        window.URL.revokeObjectURL(url);
+    }
+
+    function showResult(text) {
+        const box = document.getElementById('resultBox');
+        box.style.display = 'block';
+        box.textContent = text;
+    }
+
+    function setButtonsDisabled(state) {
+        document.getElementById('btnAnalyzeOnly').disabled = state;
+        document.getElementById('btnSaveBatch').disabled = state;
+        document.getElementById('btnQuery').disabled = state;
     }
 </script>
 

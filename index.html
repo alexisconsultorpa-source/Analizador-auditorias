@@ -12,7 +12,7 @@
         .container { max-width: 900px; margin: 20px auto; background: var(--card); padding: 25px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.06); }
         h1 { color: var(--primary); margin: 0 0 6px 0; font-size: 22px; }
         h2 { color: var(--primary); font-size: 17px; margin-top: 25px; border-bottom: 2px solid #eee; padding-bottom: 6px; }
-        p.subtitle { color: #555; margin: 0 0 20px 0; font-size: 14px; }
+        p.subtitle { color: #555; margin: 0 0 16px 0; font-size: 14px; }
         .config-bar { background: #eef4fa; padding: 12px; border-radius: 8px; margin-bottom: 20px; display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
         .config-bar input { flex: 1; min-width: 200px; padding: 8px; border: 1px solid #ccc; border-radius: 6px; font-size: 13px; }
         .dropzone { border: 2px dashed var(--primary); border-radius: 10px; padding: 20px; text-align: center; background: #fafbfd; }
@@ -25,12 +25,18 @@
         .btn-green { background: #1e7e34; }
         .btn-red { background: var(--secondary); }
         .btn-dark { background: #343a40; }
-        textarea { width: 100%; box-sizing: border-box; height: 110px; padding: 12px; border: 1px solid #ccc; border-radius: 8px; font-family: inherit; font-size: 14px; margin-bottom: 12px; resize: vertical; }
+        .btn-outline-red { background: #fff; color: var(--secondary); border: 1.5px solid var(--secondary); }
+        textarea, input.text-input { width: 100%; box-sizing: border-box; padding: 10px 12px; border: 1px solid #ccc; border-radius: 8px; font-family: inherit; font-size: 14px; margin-bottom: 12px; }
+        textarea { height: 105px; resize: vertical; }
         .progress-container { width: 100%; background: #e9ecef; border-radius: 6px; height: 10px; margin-top: 15px; display: none; overflow: hidden; }
         .progress-bar { height: 100%; background: var(--primary); width: 0%; transition: width 0.3s; }
         #statusMsg { margin-top: 12px; font-size: 13px; font-weight: 600; text-align: center; word-break: break-word; }
         #errorLog { margin-top: 10px; background: #fff5f5; border: 1px solid #f5c2c7; color: #842029; padding: 10px; border-radius: 6px; font-size: 12px; display: none; white-space: pre-wrap; text-align: left; }
         #resultBox { margin-top: 20px; background: #f8f9fa; padding: 18px; border-radius: 8px; border: 1px solid #dee2e6; white-space: pre-wrap; font-size: 14px; line-height: 1.5; display: none; }
+        .db-box { background: #fcfcfd; border: 1px solid #e2e6ea; border-radius: 10px; padding: 15px; margin-top: 12px; }
+        .db-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+        .db-row input { flex: 1; min-width: 180px; margin-bottom: 0; }
+        #dbList { margin-top: 12px; font-size: 13px; color: #333; max-height: 220px; overflow-y: auto; background: #fff; border: 1px solid #eee; border-radius: 6px; padding: 10px; }
     </style>
 </head>
 <body>
@@ -60,7 +66,7 @@
 
     <h2>2. Consulta Específica, Relaciones y Detección de Patrones</h2>
     <p class="subtitle">Pide cruces por fechas, comparativas entre estaciones, hallazgos repetidos o evaluaciones de personal.</p>
-    <textarea id="customPrompt" placeholder="Ejemplo: Cuántos pisteros fueron evaluados y cuáles fueron las fallas más comunes."></textarea>
+    <textarea id="customPrompt" placeholder="Ejemplo: Cuántos pisteros fueron evaluados, cuáles fueron los puntajes más bajos y qué fallas se repiten más."></textarea>
     
     <div class="btn-group">
         <button id="btnQuery" class="btn-blue" onclick="runRelationalAnalysis()">📊 Ejecutar Análisis Relacional</button>
@@ -68,6 +74,19 @@
     </div>
 
     <div id="resultBox"></div>
+
+    <h2>3. Control y Limpieza de Base de Datos (Supabase)</h2>
+    <p class="subtitle">Revisa los informes guardados o elimina un registro específico por su ID si necesitas limpiar pruebas o errores.</p>
+    <div class="db-box">
+        <div class="btn-group" style="justify-content: flex-start; margin-bottom: 12px;">
+            <button id="btnLoadDb" class="btn-dark" onclick="loadSavedReports()">📋 Ver Reportes Guardados</button>
+        </div>
+        <div class="db-row">
+            <input type="text" id="deleteReportId" class="text-input" placeholder="Pega aquí el ID del reporte a eliminar">
+            <button id="btnDeleteOne" class="btn-outline-red" onclick="deleteReportById()">🗑️ Borrar Reporte por ID</button>
+        </div>
+        <div id="dbList">Toca "Ver Reportes Guardados" para consultar los registros actuales.</div>
+    </div>
 </div>
 
 <script>
@@ -126,31 +145,44 @@
         const base64Pdf = await fileToBase64(file);
         const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${apiKey}`;
 
-        const response = await fetch(url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                systemInstruction: { parts: [{ text: systemInstruction }] },
-                contents: [{
-                    parts: [
-                        { inlineData: { mimeType: 'application/pdf', data: base64Pdf } },
-                        { text: `Extrae los datos de este PDF (${file.name}) siguiendo estrictamente el esquema JSON solicitado.` }
-                    ]
-                }],
-                generationConfig: {
-                    temperature: 0.0,
-                    responseMimeType: "application/json"
-                }
-            })
-        });
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 60000);
 
-        const data = await response.json();
-        if (data.error) {
-            throw new Error(`API Gemini (${data.error.code || ''}): ${data.error.message}`);
+        try {
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                signal: controller.signal,
+                body: JSON.stringify({
+                    systemInstruction: { parts: [{ text: systemInstruction }] },
+                    contents: [{
+                        parts: [
+                            { inlineData: { mimeType: 'application/pdf', data: base64Pdf } },
+                            { text: `Extrae los datos de este PDF (${file.name}) siguiendo estrictamente el esquema JSON solicitado.` }
+                        ]
+                    }],
+                    generationConfig: {
+                        temperature: 0.0,
+                        responseMimeType: "application/json"
+                    }
+                })
+            });
+
+            clearTimeout(timeoutId);
+            const data = await response.json();
+            if (data.error) {
+                throw new Error(`API Gemini (${data.error.code || ''}): ${data.error.message}`);
+            }
+            const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+            if (!text) throw new Error('Gemini no devolvió contenido en la respuesta.');
+            return JSON.parse(text);
+        } catch (err) {
+            clearTimeout(timeoutId);
+            if (err.name === 'AbortError') {
+                throw new Error('Tiempo de espera agotado al procesar el PDF. Intenta con menos archivos a la vez.');
+            }
+            throw err;
         }
-        const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (!text) throw new Error('Gemini no devolvió contenido en la respuesta.');
-        return JSON.parse(text);
     }
 
     async function callGeminiText(promptText, systemInstruction) {
@@ -279,6 +311,59 @@ Devuelve un objeto JSON con esta estructura:
         if (lastExtractedTextBatch.length > 0) {
             showResult(JSON.stringify(lastExtractedTextBatch, null, 2));
         }
+        if (saveToDb && processedCount > 0) {
+            loadSavedReports();
+        }
+    }
+
+    async function loadSavedReports() {
+        const dbList = document.getElementById('dbList');
+        dbList.textContent = 'Cargando reportes desde Supabase...';
+
+        const { data, error } = await supabaseClient
+            .from('audit_reports')
+            .select('id, station_name, audit_date, coach_name, overall_score')
+            .order('audit_date', { ascending: false })
+            .limit(50);
+
+        if (error) {
+            dbList.innerHTML = `<span style="color:#842029;">Error al consultar BD: ${error.message}</span>`;
+            return;
+        }
+
+        if (!data || data.length === 0) {
+            dbList.textContent = 'No hay reportes guardados en la base de datos todavía.';
+            return;
+        }
+
+        dbList.innerHTML = data.map(r =>
+            `<div style="padding:6px 0; border-bottom:1px solid #f0f0f0;">
+                <strong>ID:</strong> <code>${r.id}</code> | <strong>Estación:</strong> ${r.station_name || 'N/A'} | <strong>Fecha:</strong> ${r.audit_date || 'N/A'} | <strong>Puntaje:</strong> ${r.overall_score ?? 'N/A'}
+            </div>`
+        ).join('');
+    }
+
+    async function deleteReportById() {
+        const idInput = document.getElementById('deleteReportId').value.trim();
+        if (!idInput) return alert('Escribe o pega el ID del reporte que deseas eliminar.');
+
+        const confirmed = confirm(`¿Seguro que deseas eliminar el reporte con ID "${idInput}" y sus datos relacionados?`);
+        if (!confirmed) return;
+
+        showErrorDetails('');
+        await supabaseClient.from('audit_evaluated_staff').delete().eq('report_id', idInput);
+        await supabaseClient.from('audit_rubric_scores').delete().eq('report_id', idInput);
+
+        const { error } = await supabaseClient.from('audit_reports').delete().eq('id', idInput);
+        if (error) {
+            setStatus(`No se pudo eliminar: ${error.message}`, 'red');
+            showErrorDetails(error.message);
+            return;
+        }
+
+        document.getElementById('deleteReportId').value = '';
+        setStatus(`Reporte ${idInput} eliminado correctamente de la base de datos.`, 'green');
+        loadSavedReports();
     }
 
     async function runRelationalAnalysis() {

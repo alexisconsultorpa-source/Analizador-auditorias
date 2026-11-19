@@ -9,13 +9,15 @@
     <style>
         :root { --primary: #00539F; --secondary: #E31837; --bg: #f4f6f9; --card: #ffffff; }
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background-color: var(--bg); margin: 0; padding: 15px; color: #222; }
-        .container { max-width: 900px; margin: 20px auto; background: var(--card); padding: 25px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.06); }
+        .container { max-width: 960px; margin: 20px auto; background: var(--card); padding: 25px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.06); }
         h1 { color: var(--primary); margin: 0 0 6px 0; font-size: 22px; }
-        h2 { color: var(--primary); font-size: 17px; margin-top: 25px; border-bottom: 2px solid #eee; padding-bottom: 6px; }
+        h2 { color: var(--primary); font-size: 17px; margin-top: 26px; border-bottom: 2px solid #eee; padding-bottom: 6px; }
+        h3 { color: #222; font-size: 15px; margin: 14px 0 6px 0; }
         p.subtitle { color: #555; margin: 0 0 16px 0; font-size: 14px; }
         .dropzone { border: 2px dashed var(--primary); border-radius: 10px; padding: 20px; text-align: center; background: #fafbfd; }
         input[type="file"] { margin: 0 auto 15px auto; display: block; max-width: 100%; }
-        input.text-input { width: 100%; box-sizing: border-box; padding: 10px 12px; border: 1px solid #ccc; border-radius: 8px; font-family: inherit; font-size: 14px; }
+        input.text-input, select.select-input { padding: 9px 12px; border: 1px solid #ccc; border-radius: 8px; font-family: inherit; font-size: 14px; background: #fff; }
+        input.text-input { width: 100%; box-sizing: border-box; }
         .btn-group { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
         button { border: none; padding: 10px 18px; border-radius: 6px; font-size: 14px; font-weight: 600; cursor: pointer; color: #fff; transition: opacity 0.2s; }
         button:hover { opacity: 0.9; }
@@ -32,14 +34,21 @@
         .db-box { background: #fcfcfd; border: 1px solid #e2e6ea; border-radius: 10px; padding: 15px; margin-top: 12px; }
         .db-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
         .db-row input { flex: 1; min-width: 180px; }
-        #dbList { margin-top: 12px; font-size: 13px; color: #333; max-height: 260px; overflow-y: auto; background: #fff; border: 1px solid #eee; border-radius: 6px; padding: 10px; }
+        #dbList { margin-top: 12px; font-size: 13px; color: #333; max-height: 240px; overflow-y: auto; background: #fff; border: 1px solid #eee; border-radius: 6px; padding: 10px; }
+        .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-top: 12px; }
+        .kpi-card { background: #f8f9fa; border: 1px solid #e2e6ea; border-radius: 8px; padding: 14px; }
+        .kpi-label { font-size: 12px; color: #555; }
+        .kpi-value { font-size: 22px; font-weight: 700; color: var(--primary); margin-top: 4px; }
+        .report-section { background: #fff; border: 1px solid #e2e6ea; border-radius: 8px; padding: 14px; margin-top: 12px; font-size: 13px; }
+        .risk-alert { background: #fff5f5; border-left: 4px solid var(--secondary); padding: 10px 12px; margin: 8px 0; border-radius: 4px; }
+        .clean-note { color: #1e7e34; font-weight: 600; }
     </style>
 </head>
 <body>
 
 <div class="container">
     <h1>Cargador Directo Mentoría Puma (Sin IA)</h1>
-    <p class="subtitle">Lee el formato estándar de Mentoría Puma | Super 7 y guarda los datos en Supabase sin usar IA.</p>
+    <p class="subtitle">Extrae datos estructurados de Mentoría Puma | Super 7 y arma el informe general desde Supabase sin usar IA.</p>
 
     <h2>1. Seleccionar PDFs y Subir a Base de Datos</h2>
     <div class="dropzone">
@@ -57,11 +66,53 @@
 
     <div id="previewBox"></div>
 
-    <h2>2. Control y Limpieza de Base de Datos (Supabase)</h2>
-    <p class="subtitle">Consulta los registros guardados o elimina uno por su ID.</p>
+    <h2>2. Informe General Consolidado (Desde Supabase)</h2>
+    <div class="db-box">
+        <div class="db-row" style="justify-content: space-between;">
+            <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+                <label for="monthFilter" style="font-size:13px; font-weight:600;">Mes:</label>
+                <select id="monthFilter" class="select-input" onchange="renderGeneralReport()">
+                    <option value="ALL">Todos los meses</option>
+                </select>
+                <button class="btn-dark" onclick="refreshAllFromDb()">🔄 Actualizar Informe</button>
+            </div>
+        </div>
+
+        <div class="kpi-grid">
+            <div class="kpi-card">
+                <div class="kpi-label">Visitas / Informes</div>
+                <div class="kpi-value" id="kpiVisits">0</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-label">Colaboradores Evaluados / Capacitados</div>
+                <div class="kpi-value" id="kpiStaff">0</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-label">Estaciones con Riesgo de Seguridad</div>
+                <div class="kpi-value" id="kpiSafetyRisks" style="color: var(--secondary);">0</div>
+            </div>
+        </div>
+
+        <div class="report-section">
+            <h3>1) Visitas en el mes por capacitador</h3>
+            <div id="visitsByCoachBox">Sin datos cargados.</div>
+        </div>
+
+        <div class="report-section">
+            <h3>2) Fallas más comunes</h3>
+            <div id="commonIssuesBox">Sin datos cargados.</div>
+        </div>
+
+        <div class="report-section">
+            <h3>3) Estaciones con riesgos de seguridad y descripción del riesgo</h3>
+            <div id="safetyRisksBox">Sin datos cargados.</div>
+        </div>
+    </div>
+
+    <h2>3. Control y Limpieza de Base de Datos (Supabase)</h2>
     <div class="db-box">
         <div class="btn-group" style="justify-content: flex-start; margin-bottom: 12px;">
-            <button id="btnLoadDb" class="btn-dark" onclick="loadSavedReports()">📋 Ver Reportes Guardados</button>
+            <button id="btnLoadDb" class="btn-dark" onclick="refreshAllFromDb()">📋 Ver Reportes Guardados</button>
         </div>
         <div class="db-row">
             <input type="text" id="deleteReportId" class="text-input" placeholder="Pega aquí el ID del reporte a eliminar">
@@ -80,8 +131,10 @@
         window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
     }
 
+    let cachedDbReports = [];
+
     window.onload = () => {
-        loadSavedReports();
+        refreshAllFromDb();
     };
 
     function setStatus(msg, color = '#00539F') {
@@ -124,6 +177,71 @@
         return fullText.trim();
     }
 
+    function parseStaffSection(text) {
+        const staffList = [];
+        const sectionMatch = text.match(/RESUMEN DE PERSONAL EVALUADO[\s\S]*?(?=DETALLE DE CALIFICACIONES DE R[ÚU]BRICA|OBSERVACIONES,\s*COMPROMISOS|$)/i);
+        if (!sectionMatch) return staffList;
+
+        const block = sectionMatch[0]
+            .replace(/#\s*\|\s*Rol\s*\|\s*Nombre Colaborador\s*\|\s*Puntaje Obt\.\s*\|\s*%\s*Ajustado\s*\|\s*Nivel/i, '')
+            .replace(/\|\s*/g, ' ');
+
+        // Busca ocurrencias de "puntaje X/Y" seguido de porcentaje y nivel
+        const entryRegex = /(\d+)\s+(Agente(?:\s+de)?\s+Pista|Agente(?:\s+de)?\s+Tienda|Cajero|Supervisor|Encargado|[A-ZÁÉÍÓÚÑ][a-zA-ZáéíóúñÁÉÍÓÚÑ]+\s+(?:Pista|Tienda))\s+(.+?)\s+(\d+\s*\/\s*\d+)\s+(\d+(?:[.,]\d+)?\s*%)\s+(Necesita Mejora|En desarrollo|Competente|Excelente)/gi;
+        let m;
+        while ((m = entryRegex.exec(block)) !== null) {
+            staffList.push({
+                num: Number(m[1]),
+                role: m[2].replace(/\s+/g, ' ').trim(),
+                name: m[3].replace(/\s+/g, ' ').trim(),
+                points: m[4].replace(/\s+/g, '').trim(),
+                adjusted_pct: m[5].replace(/\s+/g, '').trim(),
+                level: m[6].replace(/\s+/g, ' ').trim()
+            });
+        }
+        return staffList;
+    }
+
+    function parseObservationsAndSafety(text) {
+        const obsBlockMatch = text.match(/OBSERVACIONES,\s*COMPROMISOS\s*Y\s*HALLAZGOS[\s\S]*?(?=FIRMAS DIGITALES|$)/i);
+        const obsBlock = obsBlockMatch ? obsBlockMatch[0].replace(/\s+/g, ' ').trim() : '';
+
+        const generalObsMatch = obsBlock.match(/Observaciones Generales:\s*(.+?)(?=\s*Mantenimiento y Estructura:|\s*Seguridad e Higiene:|$)/i);
+        const maintObsMatch = obsBlock.match(/Mantenimiento y Estructura:\s*(.+?)(?=\s*Seguridad e Higiene:|\s*Observaciones Generales:|$)/i);
+        const safetyObsMatch = obsBlock.match(/Seguridad e Higiene:\s*(.+?)(?=\s*Observaciones Generales:|\s*Mantenimiento y Estructura:|\s*Mentoría Puma|$)/i);
+
+        const general_observations = generalObsMatch ? generalObsMatch[1].replace(/^\|\s*/, '').trim() : null;
+        const maintenance_observations = maintObsMatch ? maintObsMatch[1].replace(/^\|\s*/, '').trim() : null;
+        const safety_observations = safetyObsMatch ? safetyObsMatch[1].replace(/^\|\s*/, '').trim() : null;
+
+        const isEmptyNote = (val) => !val || /^(sin observaciones registradas\.?|n\/a|ninguna\.?)$/i.test(val.trim());
+        const has_safety_risk = !isEmptyNote(safety_observations);
+
+        // Extrae comentarios individuales relevantes (que no digan "Sin observaciones registradas.")
+        const individual_findings = [];
+        const staffObsSectionMatch = obsBlock.match(/Observaciones y Compromisos del Coach\s*(.+?)(?=OBSERVACIONES GENERALES DE LA ESTACI[ÓO]N|$)/i);
+        if (staffObsSectionMatch) {
+            const rawStaffObs = staffObsSectionMatch[1];
+            const findingRegex = /([A-ZÁÉÍÓÚÑ][a-zA-ZáéíóúñÁÉÍÓÚÑ\s]+?\((?:Agente[^)]+|[^)]+)\))\s*\|?\s*([^|]+?)(?=\s+[A-ZÁÉÍÓÚÑ][a-zA-ZáéíóúñÁÉÍÓÚÑ\s]+?\(|$)/g;
+            let fm;
+            while ((fm = findingRegex.exec(rawStaffObs)) !== null) {
+                const person = fm[1].trim();
+                const comment = fm[2].trim();
+                if (!isEmptyNote(comment)) {
+                    individual_findings.push({ person, comment });
+                }
+            }
+        }
+
+        return {
+            general_observations: isEmptyNote(general_observations) ? null : general_observations,
+            maintenance_observations: isEmptyNote(maintenance_observations) ? null : maintenance_observations,
+            safety_observations: isEmptyNote(safety_observations) ? null : safety_observations,
+            has_safety_risk,
+            individual_findings
+        };
+    }
+
     function parsePumaAuditText(fileName, text) {
         const stationMatch = text.match(/Estaci[oó]n de Servicio:\s*(.+?)(?=\s+Coach\s*\/|\s+Supervisor\s*\/|\s+Fecha de Evaluaci[oó]n:|\n|$)/i);
         const coachMatch = text.match(/Coach\s*\/\s*Evaluador:\s*(.+?)(?=\s+Supervisor\s*\/|\s+Fecha de Evaluaci[oó]n:|\s+RESULTADO GLOBAL|\n|$)/i);
@@ -143,26 +261,8 @@
         const global_level = globalLevelMatch ? globalLevelMatch[1].trim() : null;
         const overall_score = globalPctMatch ? Number(globalPctMatch[1].replace(',', '.')) : null;
 
-        const staffList = [];
-        const staffSectionMatch = text.match(/RESUMEN DE PERSONAL EVALUADO[\s\S]*?(?=DETALLE DE CALIFICACIONES DE R[ÚU]BRICA|$)/i);
-        if (staffSectionMatch) {
-            const staffBlock = staffSectionMatch[0];
-            const rowRegex = /\b(\d+)\s+(Agente Pista|Agente Tienda)\s+([A-ZÁÉÍÓÚÑ][a-zA-ZáéíóúñÁÉÍÓÚÑ\s]+?)\s+(\d+\/\d+)\s+(\d+(?:[.,]\d+)?%)\s+(Necesita Mejora|En desarrollo|Competente|Excelente)/gi;
-            let m;
-            while ((m = rowRegex.exec(staffBlock)) !== null) {
-                staffList.push({
-                    num: Number(m[1]),
-                    role: m[2].trim(),
-                    name: m[3].trim(),
-                    points: m[4].trim(),
-                    adjusted_pct: m[5].trim(),
-                    level: m[6].trim()
-                });
-            }
-        }
-
-        const obsMatch = text.match(/OBSERVACIONES,\s*COMPROMISOS\s*Y\s*HALLAZGOS[\s\S]*?(?=FIRMAS DIGITALES|$)/i);
-        const observations_text = obsMatch ? obsMatch[0].replace(/\s+/g, ' ').trim() : null;
+        const staff = parseStaffSection(text);
+        const obsData = parseObservationsAndSafety(text);
 
         return {
             source_file: fileName,
@@ -173,9 +273,9 @@
             global_level,
             overall_score,
             points_summary: globalPtsMatch ? `${globalPtsMatch[1]}/${globalPtsMatch[2]} (${globalPtsMatch[3]} col.)` : null,
-            staff_count: staffList.length,
-            staff: staffList,
-            observations: observations_text,
+            staff_count: staff.length,
+            staff,
+            ...obsData,
             raw_text: text.slice(0, 25000)
         };
     }
@@ -194,11 +294,12 @@
                 const parsed = parsePumaAuditText(files[i].name, text);
                 results.push(
                     `Archivo: ${parsed.source_file}\n` +
-                    `Estación: ${parsed.station_name}\n` +
-                    `Fecha: ${parsed.audit_date}\n` +
+                    `Estación: ${parsed.station_name} | Fecha: ${parsed.audit_date}\n` +
                     `Coach: ${parsed.coach_name || 'N/A'} | Supervisor: ${parsed.supervisor_name || 'N/A'}\n` +
                     `Nivel Global: ${parsed.global_level || 'N/A'} (${parsed.overall_score ?? 'N/A'}%)\n` +
-                    `Colaboradores detectados (${parsed.staff_count}): ${parsed.staff.map(s => `${s.name} [${s.role}: ${s.points} / ${s.adjusted_pct}]`).join(', ') || 'Ninguno'}`
+                    `Colaboradores (${parsed.staff_count}): ${parsed.staff.map(s => `${s.name} [${s.role}: ${s.points} / ${s.adjusted_pct} - ${s.level}]`).join(' ; ') || 'Ninguno'}\n` +
+                    `Riesgo Seguridad: ${parsed.has_safety_risk ? 'SÍ -> ' + parsed.safety_observations : 'No'}\n` +
+                    `Hallazgos individuales: ${parsed.individual_findings.map(f => `${f.person}: ${f.comment}`).join(' | ') || 'Ninguno'}`
                 );
             }
             showPreview(results.join('\n----------------------------------------\n'));
@@ -243,8 +344,13 @@
                         supervisor_name: parsed.supervisor_name,
                         global_level: parsed.global_level,
                         points_summary: parsed.points_summary,
+                        staff_count: parsed.staff_count,
                         staff: parsed.staff,
-                        observations: parsed.observations,
+                        general_observations: parsed.general_observations,
+                        maintenance_observations: parsed.maintenance_observations,
+                        safety_observations: parsed.safety_observations,
+                        has_safety_risk: parsed.has_safety_risk,
+                        individual_findings: parsed.individual_findings,
                         raw_text: parsed.raw_text
                     })
                 };
@@ -258,7 +364,7 @@
                 if (error) throw new Error(error.message);
 
                 savedCount++;
-                summaries.push(`OK -> ${parsed.station_name} (${parsed.audit_date}) | ID: ${data.id} | ${parsed.staff_count} colaboradores`);
+                summaries.push(`OK -> ${parsed.station_name} (${parsed.audit_date}) | ID: ${data.id} | ${parsed.staff_count} col. | Riesgo seg.: ${parsed.has_safety_risk ? 'SÍ' : 'No'}`);
             } catch (err) {
                 errorCount++;
                 errors.push(`• ${file.name}: ${err.message}`);
@@ -275,34 +381,143 @@
 
         if (errors.length > 0) showErrorDetails(errors.join('\n'));
         if (summaries.length > 0) showPreview(summaries.join('\n'));
-        if (savedCount > 0) loadSavedReports();
+        if (savedCount > 0) refreshAllFromDb();
     }
 
-    async function loadSavedReports() {
+    function safeParseSummary(raw) {
+        if (!raw) return {};
+        if (typeof raw === 'object') return raw;
+        try {
+            return JSON.parse(raw);
+        } catch {
+            return {};
+        }
+    }
+
+    async function refreshAllFromDb() {
         const dbList = document.getElementById('dbList');
         dbList.textContent = 'Cargando reportes desde Supabase...';
 
         const { data, error } = await supabaseClient
             .from('audit_reports')
-            .select('id, station_name, audit_date, coach_name, overall_score')
+            .select('id, station_name, audit_date, coach_name, overall_score, raw_summary')
             .order('audit_date', { ascending: false })
-            .limit(50);
+            .limit(200);
 
         if (error) {
             dbList.innerHTML = `<span style="color:#842029;">Error al consultar BD: ${error.message}</span>`;
             return;
         }
 
-        if (!data || data.length === 0) {
+        cachedDbReports = (data || []).map(r => ({
+            ...r,
+            parsed: safeParseSummary(r.raw_summary)
+        }));
+
+        populateMonthFilter();
+        renderGeneralReport();
+
+        if (cachedDbReports.length === 0) {
             dbList.textContent = 'No hay reportes guardados en la base de datos todavía.';
             return;
         }
 
-        dbList.innerHTML = data.map(r =>
-            `<div style="padding:6px 0; border-bottom:1px solid #f0f0f0;">
-                <strong>ID:</strong> <code>${r.id}</code> | <strong>Estación:</strong> ${r.station_name || 'N/A'} | <strong>Fecha:</strong> ${r.audit_date || 'N/A'} | <strong>Puntaje:</strong> ${r.overall_score ?? 'N/A'}%
-            </div>`
-        ).join('');
+        dbList.innerHTML = cachedDbReports.map(r => {
+            const colCount = Array.isArray(r.parsed.staff) ? r.parsed.staff.length : (r.parsed.staff_count || 0);
+            return `<div style="padding:6px 0; border-bottom:1px solid #f0f0f0;">
+                <strong>ID:</strong> <code>${r.id}</code> | <strong>Estación:</strong> ${r.station_name || 'N/A'} | <strong>Fecha:</strong> ${r.audit_date || 'N/A'} | <strong>Coach:</strong> ${r.coach_name || 'N/A'} | <strong>Col.:</strong> ${colCount} | <strong>Puntaje:</strong> ${r.overall_score ?? 'N/A'}%
+            </div>`;
+        }).join('');
+    }
+
+    function populateMonthFilter() {
+        const select = document.getElementById('monthFilter');
+        const currentVal = select.value;
+        const months = [...new Set(
+            cachedDbReports
+                .map(r => (r.audit_date || '').slice(0, 7))
+                .filter(m => /^\d{4}-\d{2}$/.test(m))
+        )].sort().reverse();
+
+        select.innerHTML = `<option value="ALL">Todos los meses</option>` +
+            months.map(m => `<option value="${m}">${m}</option>`).join('');
+
+        if ([...select.options].some(o => o.value === currentVal)) {
+            select.value = currentVal;
+        }
+    }
+
+    function renderGeneralReport() {
+        const selectedMonth = document.getElementById('monthFilter').value;
+        const filtered = selectedMonth === 'ALL'
+            ? cachedDbReports
+            : cachedDbReports.filter(r => (r.audit_date || '').startsWith(selectedMonth));
+
+        document.getElementById('kpiVisits').textContent = filtered.length;
+
+        let totalStaff = 0;
+        const visitsByCoach = {};
+        const issueCounts = {};
+        const safetyRisks = [];
+
+        filtered.forEach(r => {
+            const coach = (r.coach_name || 'Sin asignar').trim();
+            visitsByCoach[coach] = (visitsByCoach[coach] || 0) + 1;
+
+            const p = r.parsed || {};
+            const staffArr = Array.isArray(p.staff) ? p.staff : [];
+            totalStaff += staffArr.length > 0 ? staffArr.length : (Number(p.staff_count) || 0);
+
+            // Fallas desde hallazgos individuales y observaciones generales
+            (p.individual_findings || []).forEach(f => {
+                const key = f.comment.trim();
+                if (key) issueCounts[key] = (issueCounts[key] || 0) + 1;
+            });
+
+            if (p.general_observations) {
+                const key = `General: ${p.general_observations.trim()}`;
+                issueCounts[key] = (issueCounts[key] || 0) + 1;
+            }
+
+            if (p.maintenance_observations) {
+                const key = `Mantenimiento: ${p.maintenance_observations.trim()}`;
+                issueCounts[key] = (issueCounts[key] || 0) + 1;
+            }
+
+            if (p.has_safety_risk && p.safety_observations) {
+                safetyRisks.push({
+                    station: r.station_name || 'Sin estación',
+                    date: r.audit_date || 'Sin fecha',
+                    coach,
+                    description: p.safety_observations
+                });
+            }
+        });
+
+        document.getElementById('kpiStaff').textContent = totalStaff;
+        document.getElementById('kpiSafetyRisks').textContent = safetyRisks.length;
+
+        // 1. Visitas por capacitador
+        const coachEntries = Object.entries(visitsByCoach).sort((a, b) => b[1] - a[1]);
+        document.getElementById('visitsByCoachBox').innerHTML = coachEntries.length === 0
+            ? 'No hay visitas registradas en el período seleccionado.'
+            : coachEntries.map(([coach, count]) => `<div>• <strong>${coach}:</strong> ${count} visita(s)</div>`).join('');
+
+        // 2. Fallas más comunes
+        const issueEntries = Object.entries(issueCounts).sort((a, b) => b[1] - a[1]);
+        document.getElementById('commonIssuesBox').innerHTML = issueEntries.length === 0
+            ? '<span class="clean-note">No se detectaron fallas u observaciones registradas en el período.</span>'
+            : issueEntries.map(([issue, count]) => `<div>• <strong>(${count})</strong> ${issue}</div>`).join('');
+
+        // 3. Riesgos de seguridad
+        document.getElementById('safetyRisksBox').innerHTML = safetyRisks.length === 0
+            ? '<span class="clean-note">Ninguna estación reporta riesgos de seguridad en el período seleccionado.</span>'
+            : safetyRisks.map(sr =>
+                `<div class="risk-alert">
+                    <strong>${sr.station}</strong> (${sr.date} — Coach: ${sr.coach})<br>
+                    <span>${sr.description}</span>
+                </div>`
+            ).join('');
     }
 
     async function deleteReportById() {
@@ -325,7 +540,7 @@
 
         document.getElementById('deleteReportId').value = '';
         setStatus(`Reporte ${idInput} eliminado correctamente de la base de datos.`, 'green');
-        loadSavedReports();
+        refreshAllFromDb();
     }
 
     function setButtonsDisabled(state) {
